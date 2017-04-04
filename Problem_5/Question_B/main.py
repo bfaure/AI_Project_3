@@ -5,6 +5,193 @@ import random
 
 from copy import deepcopy, copy
 
+class viterbi_matrix:
+
+	class viterbi_node:
+		def __init__(self):
+			self.value = ""
+			self.parent = None
+
+	def __init__(self,num_rows=3,num_cols=3,values=["H","H","T","N","N","N","N","B","H"]):
+		self.num_rows = num_rows
+		self.num_cols = num_cols
+		self.values = values
+		self.init_conditions_matrix(values)
+		self.init_matrix(num_rows,num_cols,values)
+
+	def init_conditions_matrix(self,conditions=None):
+		if conditions is not None: self.values = conditions
+		self.conditions_matrix = []
+		for y in range(self.num_rows):
+			row = []
+			for x in range(self.num_cols):
+				new_node = viterbi_node()
+				new_node.value = self.values[y*self.num_cols+x]
+				row.append(new_node)
+			self.conditions_matrix.append(row)
+
+	def init_prediction_matrix(self,conditions=None):
+		self.prediction_matrices = []
+		cells = []
+		for y in range(self.num_rows):
+			row = []
+			for x in range(self.num_cols):
+				new_node = viterbi_node()
+				new_node.value = self.values[y*self.num_cols+x]
+				if new_node.value is "B":
+					new_node.value = 0.0
+				row.append(new_node)
+			cells.append(row)
+		self.prediction_matrices.append(cells)
+
+	def add_observation(self,observed_action,observed_reading):
+		self.observed_actions.append(observed_action)
+		self.observed_readings.append(observed_reading)
+
+	def create_prediction_matrix(self):
+		cells = []
+		for y in range(self.num_rows):
+			row = []
+			for x in range(self.num_cols):
+				new_node = viterbi_node()
+				new_node.value = self.values[y*self.num_cols+x]
+				if new_node.value is "B":
+					new_node.value = 0.0
+				row.append(new_node)
+			cells.append(row)
+		return cells
+
+	def update_weights(self):
+
+		if len(self.observed_actions)==len(self.prediction_matrices):
+			print("ERROR: update_weights()")
+			return
+
+		cur_action = self.observed_actions[-1]
+		cur_reading = self.observed_readings[-1]
+
+		old_pred_matrix = self.prediction_matrices[-1] # get the last prediction matrix
+		transition_matrix = deepcopy(old_pred_matrix)
+
+		condition_matrix = self.conditions_matrix
+
+		# set probabilities given the reported reading compared to state values
+		for y in range(3):
+			for x in range(3):
+
+				# never in this state
+				if condition_matrix[y][x].value=="B": transition_matrix[y][x].value = 0.0
+
+				# in this state with 0.9 confidence (same as reading)
+				elif condition_matrix[y][x].value==cur_reading: transition_matrix[y][x].value = 0.9
+		
+				# in this state only if there was a mis-reading of the cur_reading
+				else: transition_matrix[y][x].value = 0.1
+
+		# set probabilities given the reported movement (cur_action) compared to condition neighbors
+		#
+		# iterate over all possible current locations
+		for y in range(3):
+			for x in range(3):
+
+				# if the current location is a blocked cell, it will have already been set to P = 0.0
+				if condition_matrix[y][x].value=="B": continue
+
+				# if the reported action was a translation to the right
+				if cur_action=="Right":
+					# if the current location is in the middle or right columns
+					if x==1 or x==2: transition_matrix[y][x].value *= 0.9
+					# if the current location is in the left column
+					if x==0:
+						# if a right translation could be prevented due to a blocked cell to the right
+						if condition_matrix[y][x+1].value=="B": transition_matrix[y][x].value *= 0.9
+						else: 							  		transition_matrix[y][x].value *= 0.1
+
+				if cur_action=="Left":
+					if x==0 or x==1: transition_matrix[y][x].value *= 0.9
+					if x==2:
+						if condition_matrix[y][x-1].value=="B": transition_matrix[y][x].value *= 0.9
+						else: 							  		transition_matrix[y][x].value *= 0.1
+
+				if cur_action=="Up":
+					if y==0 or y==1: transition_matrix[y][x].value *= 0.9
+					if y==2:
+						if condition_matrix[y-1][x].value=="B": transition_matrix[y][x].value *= 0.9
+						else: 							  		transition_matrix[y][x].value *= 0.1
+
+				if cur_action=="Down":
+					if y==1 or y==2: transition_matrix[y][x].value *= 0.9
+					if y==0:
+						if condition_matrix[y+1][x].value=="B": transition_matrix[y][x].value *= 0.9
+						else:							  		transition_matrix[y][x].value *= 0.1
+		
+		# now need to normalize all values by dividing by probability sum
+		transition_matrix = normalize_matrix(transition_matrix)
+
+		self.transition_matrices.append(transition_matrix)
+
+		
+
+
+
+	def get_matrix_sum(self,matrix):
+		matrix_sum = 0
+		for y in range(3):
+			for x in range(3):
+				matrix_sum += float(matrix[y][x]value)
+		return matrix_sum
+
+	def normalize_pred_matrix(self,matrix):
+		matrix_sum = float(self.get_matrix_sum(matrix))
+		for y in range(3):
+			for x in range(3):
+				matrix[y][x].value = float(matrix[y][x].value)/matrix_sum
+		return matrix
+
+	def init_observations(self,seen_actions,seen_readings):
+
+		self.init_conditions_matrix()
+		self.init_observations_matrix()
+
+		self.observed_actions = []
+		self.observed_readings = []
+
+		condition_matrix = create_condition_matrix()
+		pred_matrix = create_prediction_matrix()
+		print_current_state(condition_matrix,pred_matrix)
+
+		move_index = 1
+
+		seen_actions = []
+		seen_readings = []
+
+		#pred_matrices.append(copy(pred_matrix))
+
+		for cur_action,cur_reading in zip(actions,readings):
+
+			self.add_observation(cur_action,cur_reading)
+			self.update_weights()
+
+			pred_matrix = self.
+
+
+			# add to list of states
+			pred_matrices.append(deepcopy(pred_matrix)) 
+
+			# print out current state information
+			print_current_state(pred_matrix=pred_matrix,move_index=move_index,cur_action=cur_action,cur_reading=cur_reading,print_pred= not show_all)
+			
+			# get the most likely traversal sequence
+			predicted_seq,probabilities = get_predicted_sequence(pred_matrices,cur_action,cur_reading,show_all,seen_actions)
+
+			if predicted_seq!=-1:
+
+				# print out the most likely traversal sequence
+				print_predicted_sequence(condition_matrix,predicted_seq,probabilities,seen_actions,seen_readings)
+
+			move_index+=1
+
+
 
 # creates a new 3x3 prediction matrix given the provided conditions
 def create_prediction_matrix(values=["H","H","T","N","N","N","N","B","H"]):
@@ -77,13 +264,6 @@ def print_current_state(condition_matrix=None,pred_matrix=None,move_index=0,cur_
 		print_matrix(pred_matrix,desired_item_size)
 	#print("\n"+delim_line)
 
-# returns the element-wise sum of the input 3x3 matrix
-def get_matrix_sum(matrix):
-	matrix_sum = 0
-	for y in range(3):
-		for x in range(3):
-			matrix_sum += float(matrix[y][x])
-	return matrix_sum
 
 # divides each elements of the input 3x3 matrix by its matrix sum
 def normalize_matrix(matrix):
@@ -105,6 +285,7 @@ def update_predictions(cur_action,cur_reading,condition_matrix,old_pred_matrix):
 	# set probabilities given the reported reading compared to state values
 	for y in range(3):
 		for x in range(3):
+
 			# never in this state
 			if condition_matrix[y][x]=="B": pred_matrix[y][x] = 0.0
 
@@ -113,7 +294,7 @@ def update_predictions(cur_action,cur_reading,condition_matrix,old_pred_matrix):
 	
 			# in this state only if there was a mis-reading of the cur_reading
 			else: pred_matrix[y][x] *= 0.1
-	
+
 	# set probabilities given the reported movement (cur_action) compared to condition neighbors
 	#
 	# iterate over all possible current locations
@@ -125,10 +306,8 @@ def update_predictions(cur_action,cur_reading,condition_matrix,old_pred_matrix):
 
 			# if the reported action was a translation to the right
 			if cur_action=="Right":
-				
 				# if the current location is in the middle or right columns
 				if x==1 or x==2: pred_matrix[y][x] *= 0.9
-
 				# if the current location is in the left column
 				if x==0:
 					# if a right translation could be prevented due to a blocked cell to the right
@@ -196,7 +375,7 @@ def get_neighbors(pred_matrix,current_location):
 # current_location: [x,y] (x,y in [0,1,2]), current location
 #
 # return: [x,y] (x,y in [0,1,2]), coordinates of likely ancestor
-def get_ancestor(pred_matrix,current_location):
+def get_ancestor(pred_matrix,current_location,last_action=None):
 	highest_prob = 0
 	ancestor = [-1,-1]
 	possible_ancestors = get_neighbors(pred_matrix,current_location)
@@ -216,34 +395,59 @@ def get_neighbor_weights(pred_matrix,last_location,neighbors):
 # pred_matrices: list of 3x3 prediction matrices (1 for each reported action)
 #
 # return: [[x,y],...] list of predicted locations back to starting spot
-def get_predicted_sequence(pred_matrices,cur_action,cur_reading,show_all=False):
+def get_predicted_sequence(pred_matrices,cur_action,cur_reading,show_all,seen_actions):
 
 	if show_all:
 		for p in pred_matrices:
 			print_matrix(p)
 
-	last_location = None
+	best_path = ""
+	best_path_probabilities = ""
+	highest_prob = 0.0
 
-	predicted_moves = []
-	predicted_probabilities = []
+	for y in range(3):
+		for x in range(3):
 
-	last_probability = None
+			last_location = [x,y]
+			last_probability = pred_matrices[-1][y][x]
+			if last_probability==0.0: continue
 
-	for cur_pred_matrix in reversed(pred_matrices):
+			#last_location = None
 
-		# if this is the first iteration (last prediction matrix)
-		if last_location is None: 
-			last_location,last_probability = predict_location(cur_pred_matrix)
+			predicted_moves = []
+			predicted_probabilities = []
 
-		else:
-			last_location,next_probability = get_ancestor(cur_pred_matrix,last_location)
-			last_probability = next_probability*last_probability
+			#last_probability = None
 
-		# add the predicted move to beginning of the list
-		predicted_moves.insert(0,last_location)
-		predicted_probabilities.insert(0,last_probability)
+			#if len(pred_matrices)<=1:
+			#	last_location,last_probability = predict_location(pred_matrices[0])
 
-	return predicted_moves, predicted_probabilities
+			for cur_pred_matrix in reversed(pred_matrices[:-2]):
+
+				# if this is the first iteration (last prediction matrix)
+				if last_location is None: 
+					last_location,last_probability = predict_location(cur_pred_matrix)
+
+				else:
+					last_location,next_probability = get_ancestor(cur_pred_matrix,last_location,cur_action)
+					last_probability = next_probability*last_probability
+
+				# add the predicted move to beginning of the list
+				predicted_moves.insert(0,last_location)
+				predicted_probabilities.insert(0,last_probability)
+
+			if len(pred_matrices)<=2:
+				predicted_moves.insert(0,last_location)
+				predicted_probabilities.insert(0,last_probability)
+
+			if predicted_probabilities[-1] > highest_prob:
+				best_path = copy(predicted_moves)
+				best_path_probabilities = copy(predicted_probabilities)
+				highest_prob = predicted_probabilities[-1]
+
+	#print("Best path: ",best_path)
+	#print("Best path prob: ",best_path_probabilities)
+	return best_path, best_path_probabilities
 
 #def get_above_below_strings()
 
@@ -413,6 +617,7 @@ def viterbi(actions,readings):
 		# update prediction values given new information
 		pred_matrix = update_predictions(cur_action,cur_reading,condition_matrix,pred_matrix)
 
+
 		# add to list of states
 		pred_matrices.append(deepcopy(pred_matrix)) 
 
@@ -420,10 +625,12 @@ def viterbi(actions,readings):
 		print_current_state(pred_matrix=pred_matrix,move_index=move_index,cur_action=cur_action,cur_reading=cur_reading,print_pred= not show_all)
 		
 		# get the most likely traversal sequence
-		predicted_seq,probabilities = get_predicted_sequence(pred_matrices,cur_action,cur_reading,show_all)
+		predicted_seq,probabilities = get_predicted_sequence(pred_matrices,cur_action,cur_reading,show_all,seen_actions)
 
-		# print out the most likely traversal sequence
-		print_predicted_sequence(condition_matrix,predicted_seq,probabilities,seen_actions,seen_readings)
+		if predicted_seq!=-1:
+
+			# print out the most likely traversal sequence
+			print_predicted_sequence(condition_matrix,predicted_seq,probabilities,seen_actions,seen_readings)
 
 		move_index+=1
 
