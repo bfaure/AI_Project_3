@@ -3,6 +3,9 @@ import time
 
 import random
 
+from copy import deepcopy, copy
+
+
 # creates a new 3x3 prediction matrix given the provided conditions
 def create_prediction_matrix(values=["H","H","T","N","N","N","N","B","H"]):
 	matrix = []
@@ -56,7 +59,7 @@ def create_condition_matrix(values=["H","H","T","N","N","N","N","B","H"]):
 # condition matrix (doesn't change over steps), the current prediction
 # matrix (adjusted on each step), the current reported action, and the
 # current reported reading
-def print_current_state(condition_matrix=None,pred_matrix=None,move_index=0,cur_action=None,cur_reading=None,desired_item_size=20):
+def print_current_state(condition_matrix=None,pred_matrix=None,move_index=0,cur_action=None,cur_reading=None,desired_item_size=20,print_pred=False):
 	delim_line = ''.join("=" for _ in range(3*desired_item_size+10))
 	if move_index==0:
 		print("\n"+delim_line)
@@ -69,10 +72,10 @@ def print_current_state(condition_matrix=None,pred_matrix=None,move_index=0,cur_
 	if condition_matrix is not None:
 		sys.stdout.write("\nCondition Matrix:")
 		print_matrix(condition_matrix,5)
-
-	sys.stdout.write("\nPrediction Matrix")
-	print_matrix(pred_matrix,desired_item_size)
-	print("\n"+delim_line)
+	if pred_matrix is not None and print_pred:
+		sys.stdout.write("\nPrediction Matrix")
+		print_matrix(pred_matrix,desired_item_size)
+	#print("\n"+delim_line)
 
 # returns the element-wise sum of the input 3x3 matrix
 def get_matrix_sum(matrix):
@@ -95,10 +98,10 @@ def normalize_matrix(matrix):
 # condition_matrix: 3x3 condition matrix (strings)
 # pred_matrix: current 3x3 prediction matrix (floats)
 #
-# return: updated 3x3 prediction matrix
-#
-# updates the weights in the prediction matrix given a new move
-def update_predictions(cur_action,cur_reading,condition_matrix,pred_matrix):
+# return: updated 3x3 prediction matrix (given a new move)
+def update_predictions(cur_action,cur_reading,condition_matrix,old_pred_matrix):
+	pred_matrix = deepcopy(old_pred_matrix)
+
 	# set probabilities given the reported reading compared to state values
 	for y in range(3):
 		for x in range(3):
@@ -152,12 +155,244 @@ def update_predictions(cur_action,cur_reading,condition_matrix,pred_matrix):
 			
 	# now need to normalize all values by dividing by probability sum
 	pred_matrix = normalize_matrix(pred_matrix)
-
 	return pred_matrix
 
-# compute the probability of where we are in grid world given inputs 'actions' and 
-# subsequent sensor readings 'readings'
-def predict_location(actions,readings):
+# pred_matrix: 3x3 prediction matrix
+#
+# return: [x,y] (x,y in [0,1,2]), most likely current location
+def predict_location(pred_matrix):
+	highest_prob = 0
+	location 	 = [-1,-1]
+	for y in range(3):
+		for x in range(3):
+			val = pred_matrix[y][x]
+			if val > highest_prob:
+				highest_prob = val 
+				location = [x,y]
+	return location, highest_prob
+
+# pred_matrix: 3x3 prediction matrix
+# current_location: [x,y] (x,y in [0,1,2]), current location
+#
+# return: [[x,y],...] list of neighbor indices
+def get_neighbors(pred_matrix,current_location):
+	possible_neighbors = []
+
+	x_operations = [1,-1,0]
+	y_operations = [1,-1,0]
+
+	for y in y_operations:
+		for x in x_operations:
+			possible_neighbors.append([current_location[0]+x,current_location[1]+y])
+
+	neighbors = []
+	for x,y in possible_neighbors:
+		if ((x>=0 and x<3) and (y>=0 and y<3)): 
+			if x!=current_location[0] and y!=current_location[1]: continue
+			neighbors.append([x,y])
+	return neighbors
+
+# pred_matrix: 3x3 prediction matrix
+# current_location: [x,y] (x,y in [0,1,2]), current location
+#
+# return: [x,y] (x,y in [0,1,2]), coordinates of likely ancestor
+def get_ancestor(pred_matrix,current_location):
+	highest_prob = 0
+	ancestor = [-1,-1]
+	possible_ancestors = get_neighbors(pred_matrix,current_location)
+	for x,y in possible_ancestors:
+		val = pred_matrix[y][x]
+		if val>highest_prob:
+			highest_prob = val 
+			ancestor = [x,y]
+	return ancestor,highest_prob
+
+def get_neighbor_weights(pred_matrix,last_location,neighbors):
+	neighbor_weights = []
+	for n in neighbors:
+		neighbor_weights.append(pred_matrix[n[1],n[0]])
+	return neighbor_weights
+
+# pred_matrices: list of 3x3 prediction matrices (1 for each reported action)
+#
+# return: [[x,y],...] list of predicted locations back to starting spot
+def get_predicted_sequence(pred_matrices,cur_action,cur_reading,show_all=False):
+
+	if show_all:
+		for p in pred_matrices:
+			print_matrix(p)
+
+	last_location = None
+
+	predicted_moves = []
+	predicted_probabilities = []
+
+	last_probability = None
+
+	for cur_pred_matrix in reversed(pred_matrices):
+
+		# if this is the first iteration (last prediction matrix)
+		if last_location is None: 
+			last_location,last_probability = predict_location(cur_pred_matrix)
+
+		else:
+			last_location,next_probability = get_ancestor(cur_pred_matrix,last_location)
+			last_probability = next_probability*last_probability
+
+		# add the predicted move to beginning of the list
+		predicted_moves.insert(0,last_location)
+		predicted_probabilities.insert(0,last_probability)
+
+	return predicted_moves, predicted_probabilities
+
+#def get_above_below_strings()
+
+# condition_matrix: 3x3 condition matrix (strings)
+# predicted_seq: [[x,y],...] list of predicted locations
+#
+# prints out the path overlaid on the grid
+def print_predicted_sequence(condition_matrix,predicted_seq,seq_probabilities,seen_actions,seen_readings):
+	print "\nPredicted Sequence:",predicted_seq
+	print "Sequence Trace: \n"
+
+	rows = []
+	for i in range(9):
+		rows.append("")
+
+	overall_predicted_seq = copy(predicted_seq)
+	cur_step = -1
+
+	actions = []
+
+	while True:
+		cur_step += 1
+		if cur_step==len(overall_predicted_seq):
+			break
+
+		predicted_seq = overall_predicted_seq[:cur_step+1]
+
+		if cur_step!=0:
+			for i in range(1,9):
+				rows[i] += " || "
+
+		#if cur_step!=0:
+		actions.append("("+seen_actions[cur_step]+", "+seen_readings[cur_step]+")")
+		#else:
+		#	actions.append("        ")
+
+		for y in range(3):
+			
+			above_row = ""
+			below_row = ""
+			full_row = ""
+
+			for x in range(3):
+
+				above_section = "     "
+				below_section = "     "
+
+				above_section = list(above_section)
+				below_section = list(below_section)
+
+				cur_cond = condition_matrix[y][x]
+				row = "  "+cur_cond+"  "
+
+				row = list(row)
+
+				if [x,y] in predicted_seq:
+
+					i = predicted_seq.index([x,y])
+					
+					if predicted_seq[len(predicted_seq)-1] == [x,y]:
+						row[1] = '('
+						row[3] = ')'
+
+					last_loc = None 
+					next_loc = None 
+
+					if i>0: last_loc = predicted_seq[i-1]
+					if i<len(predicted_seq)-1: next_loc = predicted_seq[i+1]
+
+					#del predicted_seq[i]
+
+					if last_loc is not None:
+
+						# if the prior location was in the same column
+						if last_loc[0]==x:
+
+							# if the prior location was in the above neighbor
+							if last_loc[1]==y-1:
+								above_section[2] = '|'
+
+							# if the prior location was in the below neighbor
+							elif last_loc[1]==y+1:
+								below_section[2] = '|'
+
+						# if the prior location was in the same row
+						elif last_loc[1]==y:
+
+							# if the prior location was in the left neighbor
+							if last_loc[0]==x-1:
+								row[0] = '-'
+
+							# if the prior location was in the right neighbor
+							if last_loc[0]==x+1:
+								row[4] = '-'
+
+					if next_loc is not None:
+
+						# if the prior location was in the same column
+						if next_loc[0]==x:
+
+							# if the prior location was in the above neighbor
+							if next_loc[1]==y-1:
+								above_section[2] = '|'
+
+							# if the prior location was in the below neighbor
+							elif next_loc[1]==y+1:
+								below_section[2] = '|'
+
+						# if the prior location was in the same row
+						elif next_loc[1]==y:
+
+							# if the prior location was in the left neighbor
+							if next_loc[0]==x-1:
+								row[0] = '-'
+
+							# if the prior location was in the right neighbor
+							if next_loc[0]==x+1:
+								row[4] = '-'
+
+				above_section = "".join(above_section)
+				below_section = "".join(below_section)
+				row = "".join(row)
+
+				above_row += above_section
+				full_row  += row 
+				below_row += below_section
+
+			rows[3*y]   += above_row
+			rows[3*y+1] += full_row
+			rows[3*y+2] += below_row 
+
+	sys.stdout.write("   ")
+	for a in actions:
+		sys.stdout.write(a+"         ")
+
+	for i in range(9):
+		print(rows[i])
+
+	sys.stdout.write("P:")
+	sys.stdout.write("  ")
+	for p in seq_probabilities:
+		sys.stdout.write(str(p)[:8]+"           ")
+	sys.stdout.write("\n")
+
+def viterbi(actions,readings):
+
+	show_all = False
+
+	pred_matrices = []
 
 	condition_matrix = create_condition_matrix()
 	pred_matrix = create_prediction_matrix()
@@ -165,23 +400,44 @@ def predict_location(actions,readings):
 
 	move_index = 1
 
+	seen_actions = []
+	seen_readings = []
+
+	#pred_matrices.append(copy(pred_matrix))
+
 	for cur_action,cur_reading in zip(actions,readings):
+
+		seen_actions.append(cur_action)
+		seen_readings.append(cur_reading)
 
 		# update prediction values given new information
 		pred_matrix = update_predictions(cur_action,cur_reading,condition_matrix,pred_matrix)
 
+		# add to list of states
+		pred_matrices.append(deepcopy(pred_matrix)) 
+
 		# print out current state information
-		print_current_state(pred_matrix=pred_matrix,move_index=move_index,cur_action=cur_action,cur_reading=cur_reading)
+		print_current_state(pred_matrix=pred_matrix,move_index=move_index,cur_action=cur_action,cur_reading=cur_reading,print_pred= not show_all)
+		
+		# get the most likely traversal sequence
+		predicted_seq,probabilities = get_predicted_sequence(pred_matrices,cur_action,cur_reading,show_all)
+
+		# print out the most likely traversal sequence
+		print_predicted_sequence(condition_matrix,predicted_seq,probabilities,seen_actions,seen_readings)
+
 		move_index+=1
 
 def main():
 	actions = ["Right","Right","Down","Down"]
 	readings = ["N","N","H","H"]
 
-	#actions = ["Right","Down","Down","Down","Down"]
-	#readings = ["N","H","H","H","H"]
+	actions = ["Right","Down","Down","Down","Down"]
+	readings = ["N","H","H","H","H"]
 
-	predict_location(actions,readings)
+	actions = ["Left","Left","Up","Right","Right","Down","Down"]
+	readings = ["N","N","H","H","T","N","H"]
+
+	viterbi(actions,readings)
 
 if __name__ == '__main__':
 	main()
