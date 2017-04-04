@@ -171,14 +171,14 @@ def print_current_state(condition_matrix=None,pred_matrix=None,move_index=0,cur_
 		print("Initial State")
 	else:
 		print(delim_line)
-		print("\nMove Index "+str(move_index))
-		print("Reported Action: "+str(cur_action)+", Reported Reading: "+str(cur_reading))
+		print("\nMove Index:\t\t"+str(move_index))
+		print("Reported Action:\t("+str(cur_action)+", "+str(cur_reading)+")")
 
 	if condition_matrix is not None:
 		sys.stdout.write("\nCondition Matrix:")
 		print_matrix(condition_matrix,5)
 
-	sys.stdout.write("\nCurrent Prediction Matrix:")
+	sys.stdout.write("\nPrediction Matrix")
 	print_matrix(pred_matrix,desired_item_size)
 	print("\n"+delim_line)
 
