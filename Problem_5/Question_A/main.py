@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 
 import random
 
@@ -123,44 +124,242 @@ def create_prediction_matrix(values=["H","H","T","N","N","N","N","B","H"]):
 		matrix.append(row)
 	return matrix
 
-def print_prediction_matrix(matrix):
-	print("\n\n_________________________________________________")
+def print_matrix(matrix,desired_item_size=20):
+	delim_line = ''.join("_" for _ in range(3*desired_item_size+10))
+
+	#sys.stdout.write("\n\n_________________________________________________\n")
+	sys.stdout.write("\n"+delim_line+"\n")
 	for row in matrix:
 		sys.stdout.write("| ")
 		for item in row:
-			desired_item_size = 10
 			real_item_size = len(str(item))
-			sys.stdout.write(str(item)[:10])
+			sys.stdout.write(str(item)[:desired_item_size])
 			if real_item_size<desired_item_size:
 				for _ in range(desired_item_size-real_item_size):
 					sys.stdout.write(" ")
 					
 			if row.index(item) is not len(row)-1:
-				sys.stdout.write(" \t| ")
+				sys.stdout.write(" | ")
 			else:
-				sys.stdout.write("\n")
+				sys.stdout.write(" |")
 		if matrix.index(row) is not len(matrix)-1:
-			sys.stdout.write("\n_________________________________________________\n")
+			#sys.stdout.write("\n_________________________________________________\n")
+			sys.stdout.write("\n"+delim_line+"\n")
 		else:
-			sys.stdout.write("\n_________________________________________________\n\n")
+			#sys.stdout.write("\n_________________________________________________\n")
+			sys.stdout.write("\n"+delim_line+"\n")
+
+def create_condition_matrix(values=["H","H","T","N","N","N","N","B","H"]):
+	matrix = []
+	for y in range(3):
+		row = []
+		for x in range(3):
+			value_idx = (3*y)+x 
+			row.append(values[value_idx])
+		matrix.append(row)
+	return matrix
+
+def print_current_state(condition_matrix,pred_matrix,move_index=0,cur_action=None,cur_reading=None):
+	if move_index==0:
+		print("\n====================================")
+		print("Initial State")
+	else:
+		print("====================================")
+		print("\nmove_index: "+str(move_index))
+		print("cur_action: "+str(cur_action)+", cur_reading: "+str(cur_reading))
+
+	sys.stdout.write("\nCondition Matrix:")
+	print_matrix(condition_matrix,desired_item_size=5)
+	sys.stdout.write("\nPrediction Matrix:")
+	print_matrix(pred_matrix)
+	print("\n====================================")
+
+def get_matrix_sum(matrix):
+	matrix_sum = 0
+	for y in range(3):
+		for x in range(3):
+			matrix_sum += float(matrix[y][x])
+	return matrix_sum
+
+def normalize_matrix(matrix):
+	matrix_sum = float(get_matrix_sum(matrix))
+	for y in range(3):
+		for x in range(3):
+			matrix[y][x] = float(matrix[y][x])/matrix_sum
+	return matrix
 
 # compute the probability of where we are in grid world given inputs 'actions' and 
 # subsequent sensor readings 'readings'
 def predict_location(actions,readings):
 
+	condition_matrix = create_condition_matrix()
 	pred_matrix = create_prediction_matrix()
-	print_prediction_matrix(pred_matrix)
+	print_current_state(condition_matrix,pred_matrix)
 
-	#for cur_action,cur_reading in zip(actions,readings):
+	move_index = 1
+	for cur_action,cur_reading in zip(actions,readings):
 
+		finalized_values = []
 
+		# set probabilities given the reported reading compared to state values
+		for y in range(3):
+			for x in range(3):
+				# never in this state
+				if condition_matrix[y][x]=="B": 
+					pred_matrix[y][x] = 0.0
+					#finalized_values.append([x,y])
 
+				# in this state with 0.9 confidence (same as reading)
+				elif condition_matrix[y][x]==cur_reading: pred_matrix[y][x] *= 0.9
+		
+				# in this state only if there was a mis-reading of the cur_reading
+				else: 
+					pred_matrix[y][x] *= 0.05
+					finalized_values.append([x,y])
+					
+		# need to go through and check if made sense given reported move
+		for y in range(3):
+			for x in range(3):
+
+				# if this is a value set assuming there was a mis-read cur_reading value
+				if [x,y] in finalized_values: continue
+				if condition_matrix[y][x]=="B": continue
+				'''
+				b_val = "none"
+				reading_spot = "none"
+
+				if cur_action=="Right":
+					try:
+						b_val = condition_matrix[y][x+1]
+					except:
+						b_val = None 
+					try:
+						reading_spot = condition_matrix[y][x-1]
+					except:
+						reading_spot = None 
+				if cur_action=="Left":
+					try:
+						b_val = condition_matrix[y][x-1]
+					except:
+						b_val = None
+					try:
+						reading_spot = condition_matrix[y][x-1]
+					except:
+						reading_spot = None
+				if cur_action=="Up":
+					try:
+						b_val = condition_matrix[y+1][x]
+					except:
+						b_val = None 
+					try:
+						reading_spot = condition_matrix[y-1][x]
+					except:
+						reading_spot = None 
+				if cur_action=="Down":
+					try:
+						b_val = condition_matrix[y-1][x]
+					except:
+						b_val = None 
+					try:
+						reading_spot = condition_matrix[y+1][x]
+					except:
+						reading_spot = None
+
+				if b_val!=None:
+					if b_val=="B": pred_matrix[y][x]*=0.9
+					else: pred_matrix[y][x]*=0.1
+				elif reading_spot!=None:
+					if reading_spot==cur_reading: pred_matrix[y][x]*=0.9
+					else: pred_matrix[y][x]*=0.1
+				else:
+					pred_matrix[y][x]*=0.1
+
+				'''
+				if cur_action=="Right":
+					if x==0:
+						if condition_matrix[y][x+1]=="B":
+							pred_matrix[y][x] *= 0.9
+						else:
+							pred_matrix[y][x] *= 0.1
+					if x==1:
+						if condition_matrix[y][x-1]==cur_reading:
+							pred_matrix[y][x] *= 0.9
+						else:
+							pred_matrix[y][x] *= 0.1
+					if x==2:
+						if condition_matrix[y][x-1]==cur_reading:
+							pred_matrix[y][x] *= 0.9
+						else:
+							pred_matrix[y][x] *= 0.1
+
+				if cur_action=="Left":
+					if x==0:
+						if condition_matrix[y][x+1]==cur_reading:
+							pred_matrix[y][x] *= 0.9
+						else:
+							pred_matrix[y][x] *= 0.1
+					if x==1:
+						if condition_matrix[y][x+1]==cur_reading:
+							pred_matrix[y][x] *= 0.9
+						else:
+							pred_matrix[y][x] *= 0.1
+					if x==2:
+						if condition_matrix[y][x-1]=="B":
+							pred_matrix[y][x] *= 0.9
+						else:
+							pred_matrix[y][x] *= 0.1
+
+				if cur_action=="Up":
+					if y==0:
+						if condition_matrix[y+1][x]=="B":
+							pred_matrix[y][x] *= 0.9
+						else:
+							pred_matrix[y][x] *= 0.1
+					if y==1:
+						if condition_matrix[y-1][x]==cur_reading:
+							pred_matrix[y][x] *= 0.9
+						else:
+							pred_matrix[y][x] *= 0.1
+					if y==2:
+						if condition_matrix[y-1][x]==cur_reading:
+							pred_matrix[y][x] *= 0.9
+						else:
+							pred_matrix[y][x] *= 0.1
+
+				if cur_action=="Down":
+					if y==0:
+						if condition_matrix[y+1][x]==cur_reading:
+							pred_matrix[y][x] *= 0.9
+						else:
+							pred_matrix[y][x] *= 0.1
+					if y==1:
+						if condition_matrix[y+1][x]==cur_reading:
+							pred_matrix[y][x] *= 0.9
+						else:
+							pred_matrix[y][x] *= 0.1
+					if y==2:
+						if condition_matrix[y-1][x]=="B":
+							pred_matrix[y][x] *= 0.9
+						else:
+							pred_matrix[y][x] *= 0.1
+				
+
+		# now need to normalize all values by dividing by probability sum
+		pred_matrix = normalize_matrix(pred_matrix)
+
+		#time.sleep(0.5)
+		print_current_state(condition_matrix,pred_matrix,move_index,cur_action,cur_reading)
+		move_index+=1
 
 
 
 def main():
 	actions = ["Right","Right","Down","Down"]
 	readings = ["N","N","H","H"]
+
+	#actions = ["Right","Down","Down","Down","Down"]
+	#readings = ["N","H","H","H","H"]
+
 	predict_location(actions,readings)
 
 if __name__ == '__main__':
