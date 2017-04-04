@@ -214,10 +214,10 @@ def predict_location(actions,readings):
 		
 				# in this state only if there was a mis-reading of the cur_reading
 				else: 
-					pred_matrix[y][x] *= 0.05
-					finalized_values.append([x,y])
-					
-		# need to go through and check if made sense given reported move
+					pred_matrix[y][x] *= 0.1
+					#finalized_values.append([x,y])
+		
+		# set probabilities given the reported movement (cur_action) compared to condition neighbors
 		for y in range(3):
 			for x in range(3):
 
@@ -281,28 +281,38 @@ def predict_location(actions,readings):
 							pred_matrix[y][x] *= 0.9
 						else:
 							pred_matrix[y][x] *= 0.1
-					if x==1:
+					if x==1 or x==2:
+						pred_matrix[y][x] *= 0.9
+						'''
 						if condition_matrix[y][x-1]==cur_reading:
 							pred_matrix[y][x] *= 0.9
 						else:
 							pred_matrix[y][x] *= 0.1
+						'''
+					'''
 					if x==2:
 						if condition_matrix[y][x-1]==cur_reading:
 							pred_matrix[y][x] *= 0.9
 						else:
 							pred_matrix[y][x] *= 0.1
+					'''
 
 				if cur_action=="Left":
-					if x==0:
+					if x==0 or x==1:
+						pred_matrix[y][x] *= 0.9
+						'''
 						if condition_matrix[y][x+1]==cur_reading:
 							pred_matrix[y][x] *= 0.9
 						else:
 							pred_matrix[y][x] *= 0.1
+						'''
+					'''
 					if x==1:
 						if condition_matrix[y][x+1]==cur_reading:
 							pred_matrix[y][x] *= 0.9
 						else:
 							pred_matrix[y][x] *= 0.1
+					'''
 					if x==2:
 						if condition_matrix[y][x-1]=="B":
 							pred_matrix[y][x] *= 0.9
@@ -310,35 +320,45 @@ def predict_location(actions,readings):
 							pred_matrix[y][x] *= 0.1
 
 				if cur_action=="Up":
-					if y==0:
-						if condition_matrix[y+1][x]=="B":
-							pred_matrix[y][x] *= 0.9
-						else:
-							pred_matrix[y][x] *= 0.1
-					if y==1:
-						if condition_matrix[y-1][x]==cur_reading:
-							pred_matrix[y][x] *= 0.9
-						else:
-							pred_matrix[y][x] *= 0.1
-					if y==2:
-						if condition_matrix[y-1][x]==cur_reading:
-							pred_matrix[y][x] *= 0.9
-						else:
-							pred_matrix[y][x] *= 0.1
-
-				if cur_action=="Down":
-					if y==0:
-						if condition_matrix[y+1][x]==cur_reading:
-							pred_matrix[y][x] *= 0.9
-						else:
-							pred_matrix[y][x] *= 0.1
-					if y==1:
-						if condition_matrix[y+1][x]==cur_reading:
-							pred_matrix[y][x] *= 0.9
-						else:
-							pred_matrix[y][x] *= 0.1
 					if y==2:
 						if condition_matrix[y-1][x]=="B":
+							pred_matrix[y][x] *= 0.9
+						else:
+							pred_matrix[y][x] *= 0.1
+					if y==0 or y==1:
+						pred_matrix[y][x] *= 0.9
+						'''
+						if condition_matrix[y-1][x]==cur_reading:
+							pred_matrix[y][x] *= 0.9
+						else:
+							pred_matrix[y][x] *= 0.1
+						'''
+					'''
+					if y==2:
+						if condition_matrix[y-1][x]==cur_reading:
+							pred_matrix[y][x] *= 0.9
+						else:
+							pred_matrix[y][x] *= 0.1
+					'''
+
+				if cur_action=="Down":
+					if y==1 or y==2:
+						pred_matrix[y][x] *= 0.9
+						'''
+						if condition_matrix[y+1][x]==cur_reading:
+							pred_matrix[y][x] *= 0.9
+						else:
+							pred_matrix[y][x] *= 0.1
+					'''
+					'''
+					if y==1:
+						if condition_matrix[y+1][x]==cur_reading:
+							pred_matrix[y][x] *= 0.9
+						else:
+							pred_matrix[y][x] *= 0.1
+					'''
+					if y==0:
+						if condition_matrix[y+1][x]=="B":
 							pred_matrix[y][x] *= 0.9
 						else:
 							pred_matrix[y][x] *= 0.1
@@ -354,11 +374,11 @@ def predict_location(actions,readings):
 
 
 def main():
-	actions = ["Right","Right","Down","Down"]
-	readings = ["N","N","H","H"]
+	#actions = ["Right","Right","Down","Down"]
+	#readings = ["N","N","H","H"]
 
-	#actions = ["Right","Down","Down","Down","Down"]
-	#readings = ["N","H","H","H","H"]
+	actions = ["Right","Down","Down","Down","Down"]
+	readings = ["N","H","H","H","H"]
 
 	predict_location(actions,readings)
 
