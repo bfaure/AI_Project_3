@@ -110,12 +110,16 @@ class grid(object):
 		# with a 10% probability return estimate of current location conditions
 		return self.get_cell_value_estimate(current_location[0],current_location[1])
 
-def create_prediction_matrix():
+def create_prediction_matrix(values=["H","H","T","N","N","N","N","B","H"]):
 	matrix = []
-	for _ in range(3):
+	for y in range(3):
 		row = []
-		for _ in range(3):
-			row.append(float(1.0/8.0))
+		for x in range(3):
+			value_idx = (3*y)+x 
+			if values[value_idx] is not "B":
+				row.append(float(1.0/8.0))
+			else:
+				row.append(0.0)
 		matrix.append(row)
 	return matrix
 
@@ -124,7 +128,13 @@ def print_prediction_matrix(matrix):
 	for row in matrix:
 		sys.stdout.write("| ")
 		for item in row:
-			sys.stdout.write(str(item))
+			desired_item_size = 10
+			real_item_size = len(str(item))
+			sys.stdout.write(str(item)[:10])
+			if real_item_size<desired_item_size:
+				for _ in range(desired_item_size-real_item_size):
+					sys.stdout.write(" ")
+					
 			if row.index(item) is not len(row)-1:
 				sys.stdout.write(" \t| ")
 			else:
@@ -132,15 +142,17 @@ def print_prediction_matrix(matrix):
 		if matrix.index(row) is not len(matrix)-1:
 			sys.stdout.write("\n_________________________________________________\n")
 		else:
-			sys.stdout.write("\n\n")
+			sys.stdout.write("\n_________________________________________________\n\n")
 
 # compute the probability of where we are in grid world given inputs 'actions' and 
 # subsequent sensor readings 'readings'
 def predict_location(actions,readings):
 
 	pred_matrix = create_prediction_matrix()
-	
 	print_prediction_matrix(pred_matrix)
+
+	#for cur_action,cur_reading in zip(actions,readings):
+
 
 
 
