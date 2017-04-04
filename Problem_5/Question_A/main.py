@@ -111,6 +111,7 @@ class grid(object):
 		# with a 10% probability return estimate of current location conditions
 		return self.get_cell_value_estimate(current_location[0],current_location[1])
 
+# creates a new 3x3 prediction matrix given the provided conditions
 def create_prediction_matrix(values=["H","H","T","N","N","N","N","B","H"]):
 	matrix = []
 	for y in range(3):
@@ -118,16 +119,17 @@ def create_prediction_matrix(values=["H","H","T","N","N","N","N","B","H"]):
 		for x in range(3):
 			value_idx = (3*y)+x 
 			if values[value_idx] is not "B":
-				row.append(float(1.0/8.0))
-			else:
+				row.append(float(1.0/8.0)) # 1/8 constant probability
+			else: # if the current location is a blocked cell
 				row.append(0.0)
 		matrix.append(row)
 	return matrix
 
+# desired_item_size: column width in characters
+#
+# prints out either a prediction or condition matrix
 def print_matrix(matrix,desired_item_size=20):
 	delim_line = ''.join("_" for _ in range(3*desired_item_size+10))
-
-	#sys.stdout.write("\n\n_________________________________________________\n")
 	sys.stdout.write("\n"+delim_line+"\n")
 	for row in matrix:
 		sys.stdout.write("| ")
@@ -143,12 +145,11 @@ def print_matrix(matrix,desired_item_size=20):
 			else:
 				sys.stdout.write(" |")
 		if matrix.index(row) is not len(matrix)-1:
-			#sys.stdout.write("\n_________________________________________________\n")
 			sys.stdout.write("\n"+delim_line+"\n")
 		else:
-			#sys.stdout.write("\n_________________________________________________\n")
 			sys.stdout.write("\n"+delim_line+"\n")
 
+# creates a new 3x3 condition matrix given the provided conditions
 def create_condition_matrix(values=["H","H","T","N","N","N","N","B","H"]):
 	matrix = []
 	for y in range(3):
@@ -159,21 +160,29 @@ def create_condition_matrix(values=["H","H","T","N","N","N","N","B","H"]):
 		matrix.append(row)
 	return matrix
 
-def print_current_state(condition_matrix,pred_matrix,move_index=0,cur_action=None,cur_reading=None):
+# prints out information about the current step, i.e. the current
+# condition matrix (doesn't change over steps), the current prediction
+# matrix (adjusted on each step), the current reported action, and the
+# current reported reading
+def print_current_state(condition_matrix=None,pred_matrix=None,move_index=0,cur_action=None,cur_reading=None,desired_item_size=20):
+	delim_line = ''.join("=" for _ in range(3*desired_item_size+10))
 	if move_index==0:
-		print("\n====================================")
+		print("\n"+delim_line)
 		print("Initial State")
 	else:
-		print("====================================")
-		print("\nmove_index: "+str(move_index))
-		print("cur_action: "+str(cur_action)+", cur_reading: "+str(cur_reading))
+		print(delim_line)
+		print("\nMove Index "+str(move_index))
+		print("Reported Action: "+str(cur_action)+", Reported Reading: "+str(cur_reading))
 
-	sys.stdout.write("\nCondition Matrix:")
-	print_matrix(condition_matrix,desired_item_size=5)
-	sys.stdout.write("\nPrediction Matrix:")
-	print_matrix(pred_matrix)
-	print("\n====================================")
+	if condition_matrix is not None:
+		sys.stdout.write("\nCondition Matrix:")
+		print_matrix(condition_matrix,5)
 
+	sys.stdout.write("\nCurrent Prediction Matrix:")
+	print_matrix(pred_matrix,desired_item_size)
+	print("\n"+delim_line)
+
+# returns the element-wise sum of the input 3x3 matrix
 def get_matrix_sum(matrix):
 	matrix_sum = 0
 	for y in range(3):
@@ -181,6 +190,7 @@ def get_matrix_sum(matrix):
 			matrix_sum += float(matrix[y][x])
 	return matrix_sum
 
+# divides each elements of the input 3x3 matrix by its matrix sum
 def normalize_matrix(matrix):
 	matrix_sum = float(get_matrix_sum(matrix))
 	for y in range(3):
@@ -198,8 +208,6 @@ def predict_location(actions,readings):
 
 	move_index = 1
 	for cur_action,cur_reading in zip(actions,readings):
-
-		finalized_values = []
 
 		# set probabilities given the reported reading compared to state values
 		for y in range(3):
@@ -255,11 +263,10 @@ def predict_location(actions,readings):
 		# now need to normalize all values by dividing by probability sum
 		pred_matrix = normalize_matrix(pred_matrix)
 
-		#time.sleep(0.5)
-		print_current_state(condition_matrix,pred_matrix,move_index,cur_action,cur_reading)
+		# print out current state information
+		print_current_state(pred_matrix=pred_matrix,move_index=move_index,cur_action=cur_action,cur_reading=cur_reading)
+
 		move_index+=1
-
-
 
 def main():
 	actions = ["Right","Right","Down","Down"]
