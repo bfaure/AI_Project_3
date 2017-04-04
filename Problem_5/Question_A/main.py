@@ -87,6 +87,71 @@ def normalize_matrix(matrix):
 			matrix[y][x] = float(matrix[y][x])/matrix_sum
 	return matrix
 
+# cur_action: reported movement direction in this step
+# cur_reading: reported reading in this step
+# condition_matrix: 3x3 condition matrix (strings)
+# pred_matrix: current 3x3 prediction matrix (floats)
+#
+# return: updated 3x3 prediction matrix
+#
+# updates the weights in the prediction matrix given a new move
+def update_predictions(cur_action,cur_reading,condition_matrix,pred_matrix):
+	# set probabilities given the reported reading compared to state values
+	for y in range(3):
+		for x in range(3):
+			# never in this state
+			if condition_matrix[y][x]=="B": pred_matrix[y][x] = 0.0
+
+			# in this state with 0.9 confidence (same as reading)
+			elif condition_matrix[y][x]==cur_reading: pred_matrix[y][x] *= 0.9
+	
+			# in this state only if there was a mis-reading of the cur_reading
+			else: pred_matrix[y][x] *= 0.1
+	
+	# set probabilities given the reported movement (cur_action) compared to condition neighbors
+	#
+	# iterate over all possible current locations
+	for y in range(3):
+		for x in range(3):
+
+			# if the current location is a blocked cell, it will have already been set to P = 0.0
+			if condition_matrix[y][x]=="B": continue
+
+			# if the reported action was a translation to the right
+			if cur_action=="Right":
+				
+				# if the current location is in the middle or right columns
+				if x==1 or x==2: pred_matrix[y][x] *= 0.9
+
+				# if the current location is in the left column
+				if x==0:
+					# if a right translation could be prevented due to a blocked cell to the right
+					if condition_matrix[y][x+1]=="B": pred_matrix[y][x] *= 0.9
+					else: 							  pred_matrix[y][x] *= 0.1
+
+			if cur_action=="Left":
+				if x==0 or x==1: pred_matrix[y][x] *= 0.9
+				if x==2:
+					if condition_matrix[y][x-1]=="B": pred_matrix[y][x] *= 0.9
+					else: 							  pred_matrix[y][x] *= 0.1
+
+			if cur_action=="Up":
+				if y==0 or y==1: pred_matrix[y][x] *= 0.9
+				if y==2:
+					if condition_matrix[y-1][x]=="B": pred_matrix[y][x] *= 0.9
+					else: 							  pred_matrix[y][x] *= 0.1
+
+			if cur_action=="Down":
+				if y==1 or y==2: pred_matrix[y][x] *= 0.9
+				if y==0:
+					if condition_matrix[y+1][x]=="B": pred_matrix[y][x] *= 0.9
+					else:							  pred_matrix[y][x] *= 0.1
+			
+	# now need to normalize all values by dividing by probability sum
+	pred_matrix = normalize_matrix(pred_matrix)
+
+	return pred_matrix
+
 # compute the probability of where we are in grid world given inputs 'actions' and 
 # subsequent sensor readings 'readings'
 def predict_location(actions,readings):
@@ -96,65 +161,14 @@ def predict_location(actions,readings):
 	print_current_state(condition_matrix,pred_matrix)
 
 	move_index = 1
+
 	for cur_action,cur_reading in zip(actions,readings):
 
-		# set probabilities given the reported reading compared to state values
-		for y in range(3):
-			for x in range(3):
-				# never in this state
-				if condition_matrix[y][x]=="B": pred_matrix[y][x] = 0.0
-
-				# in this state with 0.9 confidence (same as reading)
-				elif condition_matrix[y][x]==cur_reading: pred_matrix[y][x] *= 0.9
-		
-				# in this state only if there was a mis-reading of the cur_reading
-				else: pred_matrix[y][x] *= 0.1
-		
-		# set probabilities given the reported movement (cur_action) compared to condition neighbors
-		#
-		# iterate over all possible current locations
-		for y in range(3):
-			for x in range(3):
-
-				# if the current location is a blocked cell, it will have already been set to P = 0.0
-				if condition_matrix[y][x]=="B": continue
-
-				# if the reported action was a translation to the right
-				if cur_action=="Right":
-					
-					# if the current location is in the middle or right columns
-					if x==1 or x==2: pred_matrix[y][x] *= 0.9
-
-					# if the current location is in the left column
-					if x==0:
-						# if a right translation could be prevented due to a blocked cell to the right
-						if condition_matrix[y][x+1]=="B": pred_matrix[y][x] *= 0.9
-						else: 							  pred_matrix[y][x] *= 0.1
-
-				if cur_action=="Left":
-					if x==0 or x==1: pred_matrix[y][x] *= 0.9
-					if x==2:
-						if condition_matrix[y][x-1]=="B": pred_matrix[y][x] *= 0.9
-						else: 							  pred_matrix[y][x] *= 0.1
-
-				if cur_action=="Up":
-					if y==0 or y==1: pred_matrix[y][x] *= 0.9
-					if y==2:
-						if condition_matrix[y-1][x]=="B": pred_matrix[y][x] *= 0.9
-						else: 							  pred_matrix[y][x] *= 0.1
-
-				if cur_action=="Down":
-					if y==1 or y==2: pred_matrix[y][x] *= 0.9
-					if y==0:
-						if condition_matrix[y+1][x]=="B": pred_matrix[y][x] *= 0.9
-						else:							  pred_matrix[y][x] *= 0.1
-				
-		# now need to normalize all values by dividing by probability sum
-		pred_matrix = normalize_matrix(pred_matrix)
+		# update prediction values given new information
+		pred_matrix = update_predictions(cur_action,cur_reading,condition_matrix,pred_matrix)
 
 		# print out current state information
 		print_current_state(pred_matrix=pred_matrix,move_index=move_index,cur_action=cur_action,cur_reading=cur_reading)
-
 		move_index+=1
 
 def main():
