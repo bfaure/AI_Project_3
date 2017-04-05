@@ -247,6 +247,17 @@ class viterbi_matrix:
 		# normalize the new prediction matrix
 		new_pred_matrix = deepcopy(self.normalize_matrix(new_pred_matrix))
 
+		if len(self.prediction_matrices)==0:
+			for y in range(3):
+				for x in range(3):
+					new_pred_matrix[y][x].parent = None
+					new_pred_matrix[y][x].transition_prob = transition_matrix[y][x].value
+		else:
+			for y in range(3):
+				for x in range(3):
+					new_pred_matrix[y][x].parent = self.prediction_matrices[-1][y][x]
+					new_pred_matrix[y][x].transition_prob = transition_matrix[y][x].value
+
 		# add new prediction matrix to list
 		self.prediction_matrices.append(new_pred_matrix)
 
@@ -313,7 +324,7 @@ class viterbi_matrix:
 	def get_ancestor(self,pred_matrix,current_location,last_action=None):
 		highest_prob = 0
 		ancestor = [-1,-1]
-		possible_ancestors = self.get_neighbors(pred_matrix,current_location)
+		possible_ancestors = self.get_neighbors(current_location)
 		for x,y in possible_ancestors:
 			val = pred_matrix[y][x].value
 			if val>highest_prob:
@@ -325,7 +336,7 @@ class viterbi_matrix:
 	# current_location: [x,y] (x,y in [0,1,2]), current location
 	#
 	# return: [[x,y],...] list of neighbor indices
-	def get_neighbors(self,pred_matrix,current_location):
+	def get_neighbors(self,current_location):
 		possible_neighbors = []
 
 		x_operations = [1,-1,0]
@@ -379,12 +390,23 @@ class viterbi_matrix:
 
 		print("here")
 
+		'''
+		recent_location,recent_probability = self.predict_location(self.predicted_matrices[-1])
+		initial_probability = recent_probability
+
+		while True:
+
+			depth = 0
+			possible_ancestors = self.get_neighbors(recent_location
+		'''
+
 		for y in range(3):
 			for x in range(3):
 
-				last_location = [x,y]
-				last_probability = pred_matrices[-1][y][x].value
-				if last_probability==0.0: continue
+				#last_location = [x,y]
+				#last_probability = pred_matrices[-1][y][x].value
+				#if last_probability==0.0: continue
+				last_location,last_probability = self.predict_location(self.prediction_matrices[-1])
 
 				#last_location = None
 
@@ -396,15 +418,17 @@ class viterbi_matrix:
 				#if len(pred_matrices)<=1:
 				#	last_location,last_probability = predict_location(pred_matrices[0])
 
-				for cur_pred_matrix in reversed(pred_matrices):
+				for cur_pred_matrix,cur_transition_matrix in zip(reversed(pred_matrices),reversed(self.transition_matrices)):
+
+					#possible_ancestors = self.get_neighbors(cur_pred_matrix,last_location)
 
 					# if this is the first iteration (last prediction matrix)
-					if last_location is None: 
-						last_location,last_probability = self.predict_location(cur_pred_matrix)
+					#if last_location is None: 
+					#	last_location,last_probability = self.predict_location(cur_pred_matrix)
 
-					else:
-						last_location,next_probability = self.get_ancestor(cur_pred_matrix,last_location,cur_action)
-						last_probability = next_probability*last_probability
+					#else:
+					last_location,next_probability = self.get_ancestor(cur_transition_matrix,last_location,cur_action)
+					last_probability = next_probability*last_probability
 
 					# add the predicted move to beginning of the list
 					predicted_moves.insert(0,last_location)
@@ -1079,8 +1103,11 @@ def main():
 	#actions = ["Right","Down","Down","Down","Down"]
 	#readings = ["N","H","H","H","H"]
 
-	#actions = ["Left","Left","Up","Right","Right","Down","Down"]
-	#readings = ["N","N","H","H","T","N","H"]
+	#actions = ["Left","Up","Right","Right","Down","Down"]
+	#readings = ["N","H","H","T","N","H"]
+
+	#actions = ["Up","Right","Right"]
+	#readings = ["H","H","T"]
 
 	viterbi(actions,readings)
 
