@@ -1,8 +1,6 @@
 import sys
 import time
-
 import random
-
 from copy import deepcopy, copy
 
 class viterbi_node:
@@ -219,6 +217,10 @@ class viterbi_matrix:
 
 		self.observed_actions = []
 		self.observed_readings = []
+
+		if not path: 
+			sys.stdout.write("\nGrid Conditions...")
+			self.print_matrix(self.conditions_matrix,5)
 
 		self.move_index = 1
 		self.print_current_state()
