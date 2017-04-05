@@ -666,54 +666,10 @@ class viterbi_matrix:
 			self.print_matrix(pred_matrix,desired_item_size)
 
 def viterbi(actions,readings):
-
 	print("Constructing viterbi matrix...")
 	v_matrix = viterbi_matrix()
 	print("Constructed viterbi matrix.")
 	v_matrix.init_observations(actions,readings)
-
-
-	return
-
-	show_all = False
-
-	pred_matrices = []
-
-	condition_matrix = create_condition_matrix()
-	pred_matrix = create_prediction_matrix()
-	print_current_state(condition_matrix,pred_matrix)
-
-	move_index = 1
-
-	seen_actions = []
-	seen_readings = []
-
-	#pred_matrices.append(copy(pred_matrix))
-
-	for cur_action,cur_reading in zip(actions,readings):
-
-		seen_actions.append(cur_action)
-		seen_readings.append(cur_reading)
-
-		# update prediction values given new information
-		pred_matrix = update_predictions(cur_action,cur_reading,condition_matrix,pred_matrix)
-
-
-		# add to list of states
-		pred_matrices.append(deepcopy(pred_matrix)) 
-
-		# print out current state information
-		print_current_state(pred_matrix=pred_matrix,move_index=move_index,cur_action=cur_action,cur_reading=cur_reading,print_pred= not show_all)
-		
-		# get the most likely traversal sequence
-		predicted_seq,probabilities = get_predicted_sequence(pred_matrices,cur_action,cur_reading,show_all,seen_actions)
-
-		if predicted_seq!=-1:
-
-			# print out the most likely traversal sequence
-			print_predicted_sequence(condition_matrix,predicted_seq,probabilities,seen_actions,seen_readings)
-
-		move_index+=1
 
 def main():
 	actions = ["Right","Right","Down","Down"]
