@@ -128,11 +128,25 @@ class viterbi_matrix:
 		# now need to normalize all values by dividing by probability sum
 		transition_matrix = normalize_matrix(transition_matrix)
 
+		# add new transition matrix to list of prior transition matrices
 		self.transition_matrices.append(transition_matrix)
 
-		
+		# create new prediction matrix
+		new_pred_matrix = self.create_prediction_matrix(transition_matrix,old_pred_matrix)
 
+		# add new prediction matrix to list
+		self.prediction_matrices.append(new_pred_matrix)
 
+	def create_prediction_matrix(self,transition_matrix,old_pred_matrix):
+		new_pred_matrix = []
+		for y in range(self.num_rows):
+			row = []
+			for x in range(self.num_cols):
+				new_node = viterbi_node()
+				new_node.value = transition_matrix[y][x].value*old_pred_matrix[y][x].value
+				row.append(new_node)
+			new_pred_matrix.append(row)
+		return new_pred_matrix
 
 	def get_matrix_sum(self,matrix):
 		matrix_sum = 0
@@ -148,7 +162,12 @@ class viterbi_matrix:
 				matrix[y][x].value = float(matrix[y][x].value)/matrix_sum
 		return matrix
 
+	def print_current_state(self):
+
+
 	def init_observations(self,seen_actions,seen_readings):
+
+		self.show_all = False
 
 		self.init_conditions_matrix()
 		self.init_observations_matrix()
@@ -169,17 +188,14 @@ class viterbi_matrix:
 
 		for cur_action,cur_reading in zip(actions,readings):
 
+			# add the observation
 			self.add_observation(cur_action,cur_reading)
+			
+			# update weights given the new information
 			self.update_weights()
 
-			pred_matrix = self.
-
-
-			# add to list of states
-			pred_matrices.append(deepcopy(pred_matrix)) 
-
 			# print out current state information
-			print_current_state(pred_matrix=pred_matrix,move_index=move_index,cur_action=cur_action,cur_reading=cur_reading,print_pred= not show_all)
+			self.print_current_state()
 			
 			# get the most likely traversal sequence
 			predicted_seq,probabilities = get_predicted_sequence(pred_matrices,cur_action,cur_reading,show_all,seen_actions)
@@ -191,7 +207,46 @@ class viterbi_matrix:
 
 			move_index+=1
 
+	def print_matrix(self,matrix,desired_item_size=20):
+		delim_line = ''.join("_" for _ in range(3*desired_item_size+10))
+		sys.stdout.write("\n"+delim_line+"\n")
+		for row in matrix:
+			sys.stdout.write("| ")
+			for item in row:
+				real_item_size = len(str(item))
+				sys.stdout.write(str(item)[:desired_item_size])
+				if real_item_size<desired_item_size:
+					for _ in range(desired_item_size-real_item_size):
+						sys.stdout.write(" ")
+						
+				if row.index(item) is not len(row)-1:
+					sys.stdout.write(" | ")
+				else:
+					sys.stdout.write(" |")
+			if matrix.index(row) is not len(matrix)-1:
+				sys.stdout.write("\n"+delim_line+"\n")
+			else:
+				sys.stdout.write("\n"+delim_line+"\n")
 
+	def print_current_state(self,desired_item_size=20):
+		pred_matrix = self.prediction_matrices[-1]
+		condition_matrix = self.condition_matrix
+
+		delim_line = ''.join("=" for _ in range(3*desired_item_size+10))
+		if move_index==0:
+			print("\n"+delim_line)
+			print("Initial State")
+		else:
+			print(delim_line)
+			print("\nMove Index:\t\t"+str(move_index))
+			print("Reported Action:\t("+str(cur_action)+", "+str(cur_reading)+")")
+
+		if condition_matrix is not None:
+			sys.stdout.write("\nCondition Matrix:")
+			self.print_matrix(condition_matrix,5)
+		if pred_matrix is not None not show_all:
+			sys.stdout.write("\nPrediction Matrix")
+			self.print_matrix(pred_matrix,desired_item_size)
 
 # creates a new 3x3 prediction matrix given the provided conditions
 def create_prediction_matrix(values=["H","H","T","N","N","N","N","B","H"]):
