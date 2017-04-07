@@ -43,16 +43,17 @@ class grid:
 	def get_item(self,x,y):
 		return self.data[y][x]
 
-	# saves the grid as a .tsv file at specified location
-	def save(self,path):
-		f = open(path,"w")
+	# saves the grid as a .tsv file at specified location, if seq is not None then
+	# the indices which exist in the path will have a '*' character appended to their entry
+	def save(self,filepath,seq=None):
+		f = open(filepath,"w")
 		for y in range(self.num_rows):
 			for x in range(self.num_cols):
-				f.write(self.data[y][x])
-				if x != self.num_cols-1:
-					f.write("\t")
-				else:
-					f.write("\n")
+				elem = self.data[y][x]
+				if seq is not None and [x,y] in seq: elem += "*"
+				f.write(elem)
+				if x != self.num_cols-1: f.write("\t")
+				else: f.write("\n")
 		f.close()
 
 def generate_data(num_maps=10,num_per_map=10,sequence_length=100):
@@ -163,6 +164,8 @@ def generate_data(num_maps=10,num_per_map=10,sequence_length=100):
 				save_file.write(reading+"\n")
 
 			save_file.write("~\n")
+
+			if seq_idx==0: cur_grid.save(map_dir+"/grid_"+str(map_idx)+"_traversal_0.tsv",seq=agent_real_locations)
 
 			save_file.close()
 
