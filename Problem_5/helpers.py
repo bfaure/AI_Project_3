@@ -55,8 +55,55 @@ class viterbi_matrix:
 			self.conditions_matrix.append(row)
 		self.num_rows = len(self.conditions_matrix)
 		sys.stdout.write("success. ")
-		sys.stdout.write("Rows: "+str(self.num_rows)+", Columns: "+str(self.num_cols)+"\n\n")
+		sys.stdout.write("Rows: "+str(self.num_rows)+", Columns: "+str(self.num_cols)+"\n")
 		f.close()
+
+	# loads in an observation file (.txt)
+	def load_observations(self,observation_path):
+		# ensure the file exists
+		if not os.path.exists(observation_path):
+			print("\nWARNING: Could not find "+observation_path+"\n")
+			return
+
+		sys.stdout.write("Loading \""+observation_path+"\"... ")
+		f = open(observation_path,"r")
+		text = f.read()
+		lines = text.split("\n")
+
+		self.actual_traversal_path = []
+		self.observed_actions = []
+		self.observed_readings = []
+		self.start_location = None
+
+		current_item_type = None
+
+		for line in lines:
+			if line.find("start_location")!=-1:
+				x,y = line.split(" - ")[1].split(",")
+				self.start_location = [int(x.replace("(","")),int(y.replace(")",""))]
+
+			elif line.find("~")!=-1:
+				if current_item_type==None: current_item_type = "actual_traversal_path"
+				elif current_item_type=="actual_traversal_path": current_item_type = "observed_actions"
+				elif current_item_type=="observed_actions": current_item_type = "observed_readings"
+				else: break
+			else:
+				if current_item_type=="actual_traversal_path":
+					x,y = line.split(",")
+					self.actual_traversal_path.append([int(x.replace("(","")),int(y.replace(")",""))])
+				else: self.__dict__[current_item_type].append(line)
+
+		if len(self.observed_actions)!=len(self.observed_readings):
+			sys.stdout.write("failure: observations invalid\n")
+			return
+
+		sys.stdout.write("success. ")
+		print("Path: "+str(len(self.actual_traversal_path))+", Observations: "+str(len(self.observed_readings)))
+
+		self.transition_matrices = []
+		self.prediction_matrices = []
+
+
 
 	# creates a new condition matrix given the provided conditions
 	def init_conditions_matrix(self,conditions=None):
