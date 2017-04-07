@@ -1,6 +1,7 @@
 import sys
 import time
 import random
+import os
 from copy import deepcopy, copy
 
 class viterbi_node:
@@ -9,14 +10,55 @@ class viterbi_node:
 		self.parent = None
 
 class viterbi_matrix:
-	def __init__(self,num_rows=3,num_cols=3,values=["H","H","T","N","N","N","N","B","H"]):
-		self.num_rows = num_rows
-		self.num_cols = num_cols
-		self.values = values
-		self.init_conditions_matrix(values)
-		self.init_prediction_matrix(values)
+	def __init__(self,num_rows=3,num_cols=3,values=["H","H","T","N","N","N","N","B","H"],load_path=None):
+		# Questions A & B...
+		if load_path is None:
+			self.num_rows = num_rows
+			self.num_cols = num_cols
+			self.values = values
+			self.init_conditions_matrix(values)
+			self.init_prediction_matrix(values)
 
-	# creates a new 3x3 condition matrix given the provided conditions
+		# Question D...
+		else:
+			self.load_path = load_path
+			self.load_conditions_matrix()
+
+	# loads a grid world matrix from a .tsv file
+	def load_conditions_matrix(self):
+		# ensure the .tsv file exists
+		if not os.path.exists(self.load_path):
+			print("\nWARNING: Could not find .tsv file "+self.load_path+"\n")
+			return
+
+		sys.stdout.write("\nLoading \""+self.load_path+"\"... ")
+		f = open(self.load_path,"r")
+		text = f.read()
+		lines = text.split("\n")
+
+		self.conditions_matrix = []
+		self.num_cols = None
+
+		for line in lines:
+			elems = line.split("\t")
+			if len(elems)<2: break # break if line doesn't make sense to exist
+			row = []
+			for elem in elems:
+				new_node = viterbi_node()
+				new_node.value = elem
+				row.append(new_node)
+			if self.num_cols is None: self.num_cols = len(row)
+			else:
+				if len(row) != self.num_cols:
+					sys.stdout.write("warning, ")
+					row = row[:self.num_cols]
+			self.conditions_matrix.append(row)
+		self.num_rows = len(self.conditions_matrix)
+		sys.stdout.write("success. ")
+		sys.stdout.write("Rows: "+str(self.num_rows)+", Columns: "+str(self.num_cols)+"\n\n")
+		f.close()
+
+	# creates a new condition matrix given the provided conditions
 	def init_conditions_matrix(self,conditions=None):
 		if conditions is not None: self.values = conditions
 		self.conditions_matrix = []
@@ -28,7 +70,7 @@ class viterbi_matrix:
 				row.append(new_node)
 			self.conditions_matrix.append(row)
 
-	# clears the current prediction_matrices list and creates a new 3x3 prediction matrix
+	# clears the current prediction_matrices list and creates a new prediction matrix
 	# to be inserted at the first location in the list, all initial probabilities are set to 1/8
 	# besides the location containing "B" which has it's probability set to 0
 	def init_prediction_matrix(self,conditions=None):
@@ -51,7 +93,7 @@ class viterbi_matrix:
 		self.observed_readings.append(self.cur_reading)
 		self.move_index+=1
 
-	# creates a new 3x3 prediction matrix given the provided conditions
+	# creates a new prediction matrix given the provided conditions
 	def empty_prediction_matrix(self):
 		cells = []
 		for y in range(self.num_rows):
@@ -67,10 +109,10 @@ class viterbi_matrix:
 
 	# cur_action: reported movement direction in this step
 	# cur_reading: reported reading in this step
-	# condition_matrix: 3x3 condition matrix (strings)
-	# pred_matrix: current 3x3 prediction matrix (floats)
+	# condition_matrix: condition matrix (strings)
+	# pred_matrix: current prediction matrix (floats)
 	#
-	# return: updated 3x3 prediction matrix (given a new move)
+	# return: updated prediction matrix (given a new move)
 	def update_weights(self):
 
 		# if we have already updated the weights for the most recent observation
@@ -83,14 +125,14 @@ class viterbi_matrix:
 		cur_reading = self.cur_reading
 
 		old_pred_matrix 	= self.prediction_matrices[-1] # get the last prediction matrix
-		transition_matrix 	= self.empty_prediction_matrix() # create new 3x3 matrix
-		condition_matrix 	= self.conditions_matrix # 3x3 matrix holding cell conditions
+		transition_matrix 	= self.empty_prediction_matrix() # create new matrix
+		condition_matrix 	= self.conditions_matrix # matrix holding cell conditions
 
 		# set probabilities given the reported reading compared to state values
 		#
 		# iterate over all possible current locations
-		for y in range(3):
-			for x in range(3):
+		for y in range(self.num_rows):
+			for x in range(self.num_cols):
 
 				# never in this state
 				if condition_matrix[y][x].value=="B": transition_matrix[y][x].value = 0.0
@@ -104,16 +146,17 @@ class viterbi_matrix:
 		# set probabilities given the reported movement (cur_action) compared to condition neighbors
 		#
 		# iterate over all possible current locations
-		for y in range(3):
-			for x in range(3):
+		for y in range(self.num_rows):
+			for x in range(self.num_cols):
 
+				# REMOVE THIS
 				# if the current location is a blocked cell, it will have already been set to P = 0.0
 				if condition_matrix[y][x].value=="B": continue
 
 				# if the reported action was a translation to the right
 				if cur_action=="Right":
-					# if in the middle column
-					if x==1:
+					# if in an inner column
+					if x>0 and x<self.num_cols-1:
 						# if the cell to the left is blocked (i.e. we couldn't have come from left)
 						if condition_matrix[y][x-1].value=="B": transition_matrix[y][x].value *= 0.1
 						# we could have legally made the reported move
@@ -128,15 +171,15 @@ class viterbi_matrix:
 
 				# if the reported action was a translation to the left
 				if cur_action=="Left":
-					# if in the middle column
-					if x==1:
+					# if in an inner column
+					if x>0 and x<self.num_cols-1:
 						# if the right cell is blocked (i.e. we couldn't have come from right)
 						if condition_matrix[y][x+1].value=="B": transition_matrix[y][x].value *= 0.1
 						# we could have legally made the reported move
 						else: 							  		transition_matrix[y][x].value *= 0.9
 
 					# if in the right column
-					if x==2:
+					if x==self.num_cols-1:
 						# if a left translation could be prevented due to a blocked cell to the left
 						if condition_matrix[y][x-1].value=="B": transition_matrix[y][x].value *= 0.9
 						# only here if the reported action was not actually performed
@@ -144,20 +187,24 @@ class viterbi_matrix:
 
 				# if the reported action was a translation up
 				if cur_action=="Up":
-					if y==1:
+					# if in an inner row
+					if y>0 and y<self.num_rows-1:
 						if condition_matrix[y+1][x].value=="B": transition_matrix[y][x].value *= 0.1
 						else: 									transition_matrix[y][x].value *= 0.9
 
-					if y==2:
+					# if in the bottom row
+					if y==self.num_rows-1:
 						if condition_matrix[y-1][x].value=="B": transition_matrix[y][x].value *= 0.9
 						else: 							  		transition_matrix[y][x].value *= 0.1
 
 				# if the reported action was a translation down
 				if cur_action=="Down":
-					if y==1:
+					# if in an inner row
+					if y>0 and y<self.num_rows-1:
 						if condition_matrix[y-1][x].value=="B": transition_matrix[y][x].value *= 0.1
 						else: 									transition_matrix[y][x].value *= 0.9
 
+					# if in the top row
 					if y==0:
 						if condition_matrix[y+1][x].value=="B": transition_matrix[y][x].value *= 0.9
 						else:							  		transition_matrix[y][x].value *= 0.1
@@ -174,20 +221,20 @@ class viterbi_matrix:
 
 		# point each element of the new prediction matrix to it's ancestor in the prior prediction matrix
 		if len(self.prediction_matrices)==0:
-			for y in range(3):
-				for x in range(3):
+			for y in range(self.num_rows):
+				for x in range(self.num_cols):
 					new_pred_matrix[y][x].parent = None
 					new_pred_matrix[y][x].transition_prob = transition_matrix[y][x].value
 		else:
-			for y in range(3):
-				for x in range(3):
+			for y in range(self.num_rows):
+				for x in range(self.num_cols):
 					new_pred_matrix[y][x].parent = self.prediction_matrices[-1][y][x]
 					new_pred_matrix[y][x].transition_prob = transition_matrix[y][x].value
 
 		# add new prediction matrix to list
 		self.prediction_matrices.append(new_pred_matrix)
 
-	# creates a new 3x3 matrix provided a prior prediction matrix and a transition matrix
+	# creates a new matrix provided a prior prediction matrix and a transition matrix
 	def resolve_prediction_matrix(self,transition_matrix,old_pred_matrix):
 		new_pred_matrix = []
 		for y in range(self.num_rows):
@@ -202,16 +249,16 @@ class viterbi_matrix:
 	# returns the sum of all elements in input matrix
 	def get_matrix_sum(self,matrix):
 		matrix_sum = 0
-		for y in range(3):
-			for x in range(3):
+		for y in range(len(matrix)):
+			for x in range(len(matrix[y])):
 				matrix_sum += float(matrix[y][x].value)
 		return matrix_sum
 
-	# divides each elements of the input 3x3 matrix by its matrix sum
+	# divides each elements of the input matrix by its matrix sum
 	def normalize_matrix(self,matrix):
 		matrix_sum = float(self.get_matrix_sum(matrix))
-		for y in range(3):
-			for x in range(3):
+		for y in range(len(matrix)):
+			for x in range(len(matrix[y])):
 				matrix[y][x].value = float(matrix[y][x].value)/matrix_sum
 		return matrix
 
@@ -255,7 +302,7 @@ class viterbi_matrix:
 				# print out current sequence
 				self.print_predicted_sequence(pred_seq,pred_prob)
 
-	# pred_matrix: 3x3 prediction matrix
+	# pred_matrix: prediction matrix
 	# current_location: [x,y] (x,y in [0,1,2]), current location
 	#
 	# return: [x,y] (x,y in [0,1,2]), coordinates of likely ancestor
@@ -270,7 +317,7 @@ class viterbi_matrix:
 				ancestor = [x,y]
 		return ancestor,highest_prob
 
-	# pred_matrix: 3x3 prediction matrix
+	# pred_matrix: prediction matrix
 	# current_location: [x,y] (x,y in [0,1,2]), current location
 	#
 	# return: [[x,y],...] list of neighbor indices
@@ -286,26 +333,26 @@ class viterbi_matrix:
 
 		neighbors = []
 		for x,y in possible_neighbors:
-			if ((x>=0 and x<3) and (y>=0 and y<3)):
+			if ((x>=0 and x<self.num_cols) and (y>=0 and y<self.num_rows)):
 				if x!=current_location[0] and y!=current_location[1]: continue
 				neighbors.append([x,y])
 		return neighbors
 
-	# pred_matrix: 3x3 prediction matrix
+	# pred_matrix: prediction matrix
 	#
 	# return: [x,y] (x,y in [0,1,2]), most likely current location
 	def predict_location(self,pred_matrix):
 		highest_prob = 0
 		location 	 = [-1,-1]
-		for y in range(3):
-			for x in range(3):
+		for y in range(len(pred_matrix)):
+			for x in range(len(pred_matrix[y])):
 				val = pred_matrix[y][x].value
 				if val > highest_prob:
 					highest_prob = val
 					location = [x,y]
 		return location, highest_prob
 
-	# pred_matrices: list of 3x3 prediction matrices (1 for each reported action)
+	# pred_matrices: list of prediction matrices (1 for each reported action)
 	#
 	# return: [[x,y],...] list of predicted locations back to starting spot
 	def get_predicted_sequence(self):
@@ -315,11 +362,10 @@ class viterbi_matrix:
 		pred_matrices = self.prediction_matrices[1:]
 		cur_action = self.cur_action
 		cur_reading = self.cur_reading
-		#show_all = self.show_all
 		seen_actions = self.observed_actions
 
 		'''
-		if show_all:
+		if self.show_all:
 			for p in pred_matrices:
 				print_matrix(p)
 		'''
@@ -328,20 +374,8 @@ class viterbi_matrix:
 		best_path_probabilities = ""
 		highest_prob = 0.0
 
-		#print("here")
-
-		'''
-		recent_location,recent_probability = self.predict_location(self.predicted_matrices[-1])
-		initial_probability = recent_probability
-
-		while True:
-
-			depth = 0
-			possible_ancestors = self.get_neighbors(recent_location
-		'''
-
-		for y in range(3):
-			for x in range(3):
+		for y in range(self.num_rows):
+			for x in range(self.num_cols):
 
 				#last_location = [x,y]
 				#last_probability = pred_matrices[-1][y][x].value
@@ -385,7 +419,7 @@ class viterbi_matrix:
 
 		return best_path, best_path_probabilities
 
-	# condition_matrix: 3x3 condition matrix (strings)
+	# condition_matrix: condition matrix (strings)
 	# predicted_seq: [[x,y],...] list of predicted locations
 	#
 	# prints out the path overlaid on the grid
@@ -399,7 +433,7 @@ class viterbi_matrix:
 
 		# 9 total rows in predicted sequence diagram
 		rows = []
-		for i in range(9):
+		for i in range(3*self.num_rows):
 			rows.append("")
 
 		# make shallow copy of the predicted sequence (a list of [x,y] coordinates)
@@ -414,8 +448,7 @@ class viterbi_matrix:
 		# each iteration covers a single state in the sequence diagram
 		while True:
 			cur_step += 1
-			if cur_step==len(overall_predicted_seq):
-				break
+			if cur_step==len(overall_predicted_seq): break
 
 			predicted_seq = overall_predicted_seq[:cur_step+1]
 
@@ -433,13 +466,13 @@ class viterbi_matrix:
 
 			# print out state matrix with a single location ( ) denoting current spot, appended onto
 			# whatever we have so far in the rows[] array (any previous state matrices, iterations)
-			for y in range(3):
+			for y in range(self.num_rows):
 
 				above_row = ""
 				below_row = ""
 				full_row = ""
 
-				for x in range(3):
+				for x in range(self.num_cols):
 
 					above_section = "     "
 					below_section = "     "
@@ -540,7 +573,7 @@ class viterbi_matrix:
 		for a in actions:
 			sys.stdout.write(a+"         ")
 
-		for i in range(9):
+		for i in range(3*self.num_rows):
 			print(rows[i])
 
 		sys.stdout.write("P:")
@@ -554,7 +587,7 @@ class viterbi_matrix:
 	#
 	# prints out either a prediction or condition matrix
 	def print_matrix(self,matrix,desired_item_size=20):
-		delim_line = ''.join("_" for _ in range(3*desired_item_size+10))
+		delim_line = ''.join("_" for _ in range(self.num_cols*desired_item_size+10))
 		sys.stdout.write("\n"+delim_line+"\n")
 		for row in matrix:
 			sys.stdout.write("| ")
@@ -583,7 +616,7 @@ class viterbi_matrix:
 		pred_matrix 	 = self.prediction_matrices[-1] # get the last prediction matrix
 		condition_matrix = self.conditions_matrix # get the condition matrix
 
-		delim_line = ''.join("=" for _ in range(3*desired_item_size+10))
+		delim_line = ''.join("=" for _ in range(self.num_cols*desired_item_size+10))
 		if self.move_index==1:
 			print("\n"+delim_line)
 			print("Initial State")
