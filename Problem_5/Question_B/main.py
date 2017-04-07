@@ -13,6 +13,7 @@ def main():
 	# set of observed readings
 	readings = ["N","N","H","H"]
 
+	# harder set i was testing on
 	#actions = ["Left","Up","Up","Right","Down","Up","Right","Down","Down"]
 	#readings = ["N","N","H","H","N","H","T","N","H"]
 
