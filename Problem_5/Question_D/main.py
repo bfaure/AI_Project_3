@@ -18,7 +18,7 @@ def main():
 	v = viterbi_matrix(load_path=tsv)
 
 	seq = map_dir+"traversal_0.txt"
-	v.load_observations(seq,buffer_size=10)
+	v.load_observations(seq,buffer_size=1)
 
 
 if __name__ == '__main__':

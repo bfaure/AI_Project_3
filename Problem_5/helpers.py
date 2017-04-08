@@ -27,6 +27,7 @@ class viterbi_matrix:
 	def __init__(self,num_rows=3,num_cols=3,values=["H","H","T","N","N","N","N","B","H"],load_path=None):
 		# Questions A & B...
 		if load_path is None:
+			self.actual_traversal_path = None
 			self.num_rows = num_rows
 			self.num_cols = num_cols
 			self.values = values
@@ -78,7 +79,7 @@ class viterbi_matrix:
 	# traversal path and add buffer_size to those bounds, translate the actual traversal path
 	# accordingly and trim the conditions_matrix down to said bounds (the conditions_matrices are
 	# originally 500x500 but the agent rarely makes if very far to justify that large of a search
-	# space)
+	# space) - see self.adjust_environment_bounds()
 	def load_observations(self,observation_path,buffer_size=None):
 		# ensure the file exists
 		if not os.path.exists(observation_path):
@@ -91,11 +92,16 @@ class viterbi_matrix:
 		lines = text.split("\n")
 
 		self.actual_traversal_path = []
-		self.observed_actions = []
-		self.observed_readings = []
-		self.start_location = None
 
-		current_item_type = None
+		self.observed_actions  = []
+		self.observed_readings = []
+
+		self.queued_actions  = []
+		self.queued_readings = []
+
+		self.start_location = None
+		self.show_all       = False
+		current_item_type   = None
 
 		for line in lines:
 			if line.find("start_location")!=-1:
@@ -104,8 +110,8 @@ class viterbi_matrix:
 
 			elif line.find("~")!=-1:
 				if current_item_type==None: current_item_type = "actual_traversal_path"
-				elif current_item_type=="actual_traversal_path": current_item_type = "observed_actions"
-				elif current_item_type=="observed_actions": current_item_type = "observed_readings"
+				elif current_item_type=="actual_traversal_path": current_item_type = "queued_actions"
+				elif current_item_type=="queued_actions": current_item_type = "queued_readings"
 				else: break
 			else:
 				if current_item_type=="actual_traversal_path":
@@ -113,20 +119,73 @@ class viterbi_matrix:
 					self.actual_traversal_path.append([int(x.replace("(","")),int(y.replace(")",""))])
 				else: self.__dict__[current_item_type].append(line)
 
-		if len(self.observed_actions)!=len(self.observed_readings):
+		if len(self.queued_actions)!=len(self.queued_readings):
 			sys.stdout.write("failure: observations invalid\n")
 			return
 
 		sys.stdout.write("success. ")
-		print("Path: "+str(len(self.actual_traversal_path))+", Observations: "+str(len(self.observed_readings)))
+		print("Path: "+str(len(self.actual_traversal_path))+", Observations: "+str(len(self.queued_readings)))
 
 		self.transition_matrices = []
 
 		# trim the environment down to a smaller area containing the real movement of the agent
 		if buffer_size is not None: self.adjust_environment_bounds(buffer_size)
 
-
 		self.init_prediction_matrix()
+
+		self.print_transition       = True
+		self.print_condition  	    = False
+		self.print_actual_traversal = True
+
+		self.move_index = 1
+		self.current_predicted_length = 1
+
+		self.print_current_state(5)
+
+		show_path = True
+
+		max_limit = len(self.queued_readings)
+		max_limit = 10
+
+		for self.cur_action,self.cur_reading in zip(self.queued_actions[:max_limit],self.queued_readings[:max_limit]):
+
+			# add the observation
+			self.add_observation()
+
+			# update weights given the new information
+			self.update_weights()
+
+			# print out current state information
+			self.print_current_state(6)
+
+			if show_path:
+				# get the current sequence
+				pred_seq,pred_prob = self.get_predicted_sequence()
+
+				self.current_predicted_length = len(pred_seq)
+
+				# print out current sequence
+				sys.stdout.write("\nCurrent PREDICTED Agent Traversal (Probability = ")
+				sys.stdout.write("%0.5f" % pred_prob[-1])
+				sys.stdout.write(")...\n")
+				self.print_single_sequence(pred_seq)
+
+		final_loc = self.actual_traversal_path[-1]
+		print("\nActual Final Location: ("+str(final_loc[0])+", "+str(final_loc[1])+")")
+		print("Actual traversal path length: "+str(len(self.actual_traversal_path)))
+
+		pred_final_loc = pred_seq[-1]
+		print("\nPredicted Final Location: ("+str(pred_final_loc[0])+", "+str(pred_final_loc[1])+")")
+		print("Predicted traversal path length: "+str(len(pred_seq)))
+		print("\n")
+
+	# various methods for ensuring data validity
+	def check_validity(self):
+		# check that all prediction_matrices are of the same size as the conditions_matrix
+		for m in self.prediction_matrices:
+			if len(m)!=len(self.conditions_matrix): print("WARNING: Invalid y bounds")
+			for row_idx in range(len(m)):
+				if len(m[row_idx])!=len(self.conditions_matrix[row_idx]): print("WARNING: Invalid x bounds")
 
 	# given that the actual path taken by the agent rarely fills anywhere near the entire conditions_matrix
 	# we can choose to trim the conditions_matrix down to fit the range of the path taken
@@ -144,8 +203,8 @@ class viterbi_matrix:
 		self.translate_actual_path(-1*preferred_x_min,-1*preferred_y_min)
 		self.trim_conditions_matrix(preferred_x_max,preferred_y_max,preferred_x_min,preferred_y_min)
 
-		self.num_rows = preferred_y_max-preferred_y_min
-		self.num_cols = preferred_x_max-preferred_x_min
+		self.num_rows = preferred_y_max-preferred_y_min+1
+		self.num_cols = preferred_x_max-preferred_x_min+1
 		sys.stdout.write("rows: "+str(self.num_rows)+", cols: "+str(self.num_cols)+"\n")
 
 	# translates the coordinates of the actual traversal path
@@ -153,6 +212,7 @@ class viterbi_matrix:
 		for i in range(len(self.actual_traversal_path)):
 			self.actual_traversal_path[i] = [self.actual_traversal_path[i][0]+x_offset,self.actual_traversal_path[i][1]+y_offset]
 
+	# trims the conditions matrix so it fits in specified bounds
 	def trim_conditions_matrix(self,x_max,y_max,x_min,y_min):
 		self.conditions_matrix = self.conditions_matrix[y_min:y_max+1]
 		for i in range(len(self.conditions_matrix)):
@@ -163,7 +223,7 @@ class viterbi_matrix:
 		num_blocked = 0
 		for y in range(self.num_rows):
 			for x in range(self.num_cols):
-				if self.conditions_matrix[y][x]=="B": num_blocked+=1
+				if self.conditions_matrix[y][x].value=="B": num_blocked+=1
 		return num_blocked
 
 	# creates a new condition matrix given the provided conditions
@@ -182,7 +242,7 @@ class viterbi_matrix:
 	# to be inserted at the first location in the list, all initial probabilities are set to 1/8
 	# besides the location containing "B" which has it's probability set to 0
 	def init_prediction_matrix(self):
-		init_probability = 1.0/(float(self.num_rows*self.num_cols)-float(self.get_num_blocked_cells()))
+		init_probability = 1.0/float(self.num_rows*self.num_cols-self.get_num_blocked_cells())
 		self.prediction_matrices = []
 		cells = []
 		for y in range(self.num_rows):
@@ -190,7 +250,7 @@ class viterbi_matrix:
 			for x in range(self.num_cols):
 				new_node = viterbi_node()
 				new_node.value = init_probability
-				if self.conditions_matrix[y][x]=="B": new_node.value = 0.0
+				if self.conditions_matrix[y][x].value=="B": new_node.value = 0.0
 				row.append(new_node)
 			cells.append(row)
 		self.prediction_matrices.append(cells)
@@ -242,10 +302,10 @@ class viterbi_matrix:
 		for y in range(self.num_rows):
 			for x in range(self.num_cols):
 
-				# never in this state
+				# can't ever be in a blocked cell, set probability to zero
 				if condition_matrix[y][x].value=="B": transition_matrix[y][x].value = 0.0
 
-				# in this state with 0.9 confidence (same as reading)
+				# if the reported cell type, likelyhood of cur_reading being correct is 90%
 				elif condition_matrix[y][x].value==cur_reading: transition_matrix[y][x].value = 0.9
 
 				# in this state only if there was a mis-reading of the cur_reading
@@ -259,10 +319,10 @@ class viterbi_matrix:
 
 				# REMOVE THIS
 				# if the current location is a blocked cell, it will have already been set to P = 0.0
-				if condition_matrix[y][x].value=="B": continue
+				#if condition_matrix[y][x].value=="B": continue
 
 				# if the reported action was a translation to the right
-				if cur_action=="Right":
+				if cur_action in ["Right","R"]:
 					# if in an inner column
 					if x>0 and x<self.num_cols-1:
 						# if the cell to the left is blocked (i.e. we couldn't have come from left)
@@ -278,7 +338,7 @@ class viterbi_matrix:
 						else: 							  		transition_matrix[y][x].value *= 0.1
 
 				# if the reported action was a translation to the left
-				if cur_action=="Left":
+				if cur_action in ["Left","L"]:
 					# if in an inner column
 					if x>0 and x<self.num_cols-1:
 						# if the right cell is blocked (i.e. we couldn't have come from right)
@@ -294,7 +354,7 @@ class viterbi_matrix:
 						else: 							  		transition_matrix[y][x].value *= 0.1
 
 				# if the reported action was a translation up
-				if cur_action=="Up":
+				if cur_action in ["Up","U"]:
 					# if in an inner row
 					if y>0 and y<self.num_rows-1:
 						if condition_matrix[y+1][x].value=="B": transition_matrix[y][x].value *= 0.1
@@ -306,7 +366,7 @@ class viterbi_matrix:
 						else: 							  		transition_matrix[y][x].value *= 0.1
 
 				# if the reported action was a translation down
-				if cur_action=="Down":
+				if cur_action in ["Down","D"]:
 					# if in an inner row
 					if y>0 and y<self.num_rows-1:
 						if condition_matrix[y-1][x].value=="B": transition_matrix[y][x].value *= 0.1
@@ -318,7 +378,7 @@ class viterbi_matrix:
 						else:							  		transition_matrix[y][x].value *= 0.1
 
 		# add new transition matrix to list of prior transition matrices
-		self.transition_matrices.append(transition_matrix)
+		self.transition_matrices.append(copy(transition_matrix))
 
 		# create new prediction matrix by multiplying each element of the newly created transition matrix
 		# by the element in the same location of the prior prediction matrix
@@ -386,11 +446,11 @@ class viterbi_matrix:
 		self.observed_readings = []
 
 		if not path:
-			sys.stdout.write("\nGrid Conditions...")
-			self.print_matrix(self.conditions_matrix,5)
+			sys.stdout.write("\nGrid Conditions...\n")
+			self.print_matrix(self.conditions_matrix,3)
 
 		self.move_index = 1
-		self.print_current_state()
+		self.print_current_state(6)
 
 		for self.cur_action,self.cur_reading in zip(seen_actions,seen_readings):
 
@@ -401,7 +461,7 @@ class viterbi_matrix:
 			self.update_weights()
 
 			# print out current state information
-			self.print_current_state()
+			self.print_current_state(6)
 
 			if path:
 				# get the current sequence
@@ -533,11 +593,11 @@ class viterbi_matrix:
 	# prints out the path overlaid on the grid
 	def print_predicted_sequence(self,predicted_seq,seq_probabilities):
 		condition_matrix = self.conditions_matrix
-		seen_actions = self.observed_actions
-		seen_readings = self.observed_readings
+		seen_actions     = self.observed_actions
+		seen_readings    = self.observed_readings
 
-		print "\nPredicted Sequence:",predicted_seq
-		print "..."
+		print "\n Predicted Sequence:",predicted_seq
+		sys.stdout.write("\n")
 
 		# 9 total rows in predicted sequence diagram
 		rows = []
@@ -553,23 +613,42 @@ class viterbi_matrix:
 		# row above the sequence digram (see state_header_str below)
 		actions = []
 
-		# each iteration covers a single state in the sequence diagram
-		while True:
-			cur_step += 1
-			if cur_step==len(overall_predicted_seq): break
+		# create string to represent the x axis of the plot (horizontal, top of plot)
+		x_axis = "             "
+		#for i in range(len(seq_probabilities)):
+		if True:
+			for i in range(self.num_cols):
+				item = str(i)
+				left = True
+				while len(item)<5:
+					if left:
+						left = False
+						item = " "+item
+					else:
+						left = True
+						item += " "
+				x_axis += item
+			x_axis += "    "
 
-			predicted_seq = overall_predicted_seq[:cur_step+1]
+		# each iteration covers a single state in the sequence diagram
+		#while True:
+		if True:
+			#cur_step += 1
+			#if cur_step==len(overall_predicted_seq): break
+
+			#predicted_seq = overall_predicted_seq[:cur_step+1]
+			predicted_seq = overall_predicted_seq
 
 			# make delimeter between states in the sequence diagram
-			if cur_step!=0:
-				for i in range(1,9):
-					rows[i] += " ## "
+			#if cur_step!=0:
+			#	for i in range(1,9):
+			#		rows[i] += " ## "
 
 			# create headers, e.g. '(Left, N)', seen above the predicted sequence diagram
 			state_header_str = "("+seen_actions[cur_step]+", "+seen_readings[cur_step]+")"
-			if len(state_header_str)<10:
-				for i in range(len(state_header_str),10):
-					state_header_str+=" "
+
+			while len(state_header_str)<10:
+				state_header_str+=" "
 			actions.append(state_header_str)
 
 			# print out state matrix with a single location ( ) denoting current spot, appended onto
@@ -595,69 +674,65 @@ class viterbi_matrix:
 
 					if [x,y] in predicted_seq:
 
-						predicted_seq = copy(overall_predicted_seq[:cur_step+1])
+						#predicted_seq = copy(overall_predicted_seq[:cur_step+1])
 
 						i = predicted_seq.index([x,y])
+
+						#if rendered_node[i]>2: print("here")
+
+						last_loc = None
+						next_loc = None
+
+						if i>0:          		   last_loc = predicted_seq[i-1]
+						if len(predicted_seq)>i+1: next_loc = predicted_seq[i+1]
+
+						if last_loc is not None:
+							# if the prior location was in the same column
+							if last_loc[0]==x:
+								# if the prior location was in the above neighbor
+								if last_loc[1]==y-1:
+									above_section[2] = '|'
+									#need_above = True
+								# if the prior location was in the below neighbor
+								elif last_loc[1]==y+1:
+									below_section[2] = '^'
+									#need_below = True
+
+							# if the prior location was in the same row
+							elif last_loc[1]==y:
+								# if the prior location was in the left neighbor
+								if last_loc[0]==x-1: row[0],row[1] = '-','>'
+								# if the prior location was in the right neighbor
+								if last_loc[0]==x+1: row[3],row[4] = '<','-'
+
+						if next_loc is not None:
+							# if the next location is in the same column
+							if next_loc[0]==x:
+								# if the next location is in the above neighbor
+								if next_loc[1]==y-1:
+									above_section[2] = '|'
+									#need_above = True
+								# if the next location is in the below neighbor
+								elif next_loc[1]==y+1:
+									below_section[2] = 'v'
+									#need_below = True
+
+							# if the next location is in the same row
+							elif next_loc[1]==y:
+								# if the next location is in the left neighbor
+								if next_loc[0]==x-1: row[0],row[1] = '<','-'
+								# if the next location is in the right neighbor
+								if next_loc[0]==x+1: row[3],row[4] = '-','>'
 
 						if predicted_seq[len(predicted_seq)-1] == [x,y]:
 							row[1] = '('
 							row[3] = ')'
 
-						last_loc = None
-						next_loc = None
+						if predicted_seq[0] == [x,y]:
+							row[1] = '['
+							row[3] = ']'
 
-						if i>0: last_loc = predicted_seq[i-1]
-						if i<len(predicted_seq)-1: next_loc = predicted_seq[i+1]
-
-						del predicted_seq[i]
-
-						if last_loc is not None:
-
-							# if the prior location was in the same column
-							if last_loc[0]==x:
-
-								# if the prior location was in the above neighbor
-								if last_loc[1]==y-1:
-									above_section[2] = '|'
-
-								# if the prior location was in the below neighbor
-								elif last_loc[1]==y+1:
-									below_section[2] = '|'
-
-							# if the prior location was in the same row
-							elif last_loc[1]==y:
-
-								# if the prior location was in the left neighbor
-								if last_loc[0]==x-1:
-									row[0] = '-'
-
-								# if the prior location was in the right neighbor
-								if last_loc[0]==x+1:
-									row[4] = '-'
-
-						if next_loc is not None:
-
-							# if the prior location was in the same column
-							if next_loc[0]==x:
-
-								# if the prior location was in the above neighbor
-								if next_loc[1]==y-1:
-									above_section[2] = '|'
-
-								# if the prior location was in the below neighbor
-								elif next_loc[1]==y+1:
-									below_section[2] = '|'
-
-							# if the prior location was in the same row
-							elif next_loc[1]==y:
-
-								# if the prior location was in the left neighbor
-								if next_loc[0]==x-1:
-									row[0] = '-'
-
-								# if the prior location was in the right neighbor
-								if next_loc[0]==x+1:
-									row[4] = '-'
+						#del predicted_seq[i]
 
 					above_section = "".join(above_section)
 					below_section = "".join(below_section)
@@ -674,34 +749,238 @@ class viterbi_matrix:
 		actions_str = ""
 		for a in actions:
 			actions_str+=a
-		horizontal_delim = ''.join("=" for _ in range(len(actions_str)+(9*len(actions))))
-		#sys.stdout.write(horizontal_delim+"\n")
+		horizontal_delim = ''.join("_" for _ in range(len(actions_str)+(5*len(actions))))
+		#sys.stdout.write("             "+horizontal_delim+"\n")
+		#sys.stdout.write(" Observation:    ")
+		#for a in actions:
+		#	sys.stdout.write(a+"         ")
+		#sys.stdout.write("\n             "+horizontal_delim)
+		sys.stdout.write(x_axis)
+		sys.stdout.write("\n             "+horizontal_delim+"\n")
 
-		sys.stdout.write("   ")
-		for a in actions:
-			sys.stdout.write(a+"         ")
+		# write out the path displays
+		for i in range(1,3*self.num_rows-1):
+			if (i+2)%3==0:
+				item = " "+str(int(i/3))
+				while len(item)<4:
+					item+=" "
+				#sys.stdout.write(item+"|")
+			else:
+				item = ""
+			while len(item)<12:
+				item = " "+item
+			item += "|"
+			sys.stdout.write(item)
+			#	sys.stdout.write("            |")
+			sys.stdout.write(rows[i]+"|"+"\n")
+
+		# write out bottom line of plot
+		sys.stdout.flush()
+		#sys.stdout.write("\r             "+horizontal_delim)
+		sys.stdout.write("             "+horizontal_delim)
+		sys.stdout.write("\n")
+
+		sys.stdout.write("\n Probability:   ")
+		sys.stdout.write(str(seq_probabilities[-1])[:8])
+		#for p in seq_probabilities:
+		#	sys.stdout.write(str(p)[:8]+"           ")
+		#sys.stdout.write("\n             "+horizontal_delim)
+		sys.stdout.write("\n\n")
+
+	# prints a copy of the conditions_matrix with the provided sequence overlaid
+	def print_single_sequence(self,sequence,print_seq=True):
+
+		if print_seq:
+			sys.stdout.write(" ".join("["+str(a)+","+str(b)+"]" for [a,b] in sequence))
+			sys.stdout.write("\n\n")
+		#sys.stdout.write("\n")
+
+		# create x axis to print above plot
+		x_axis = ""
+		for i in range(self.num_cols):
+			item = str(i)
+			left = True
+			while len(item)<5:
+				if left:
+					left = False
+					item = " "+item
+				else:
+					left = True
+					item += " "
+			x_axis += item
+		sys.stdout.write("        "+x_axis+"\n")
+
+		x_axis_divider = "".join("_" for _ in range(5*self.num_cols))
+		sys.stdout.write("      "+x_axis_divider+"\n")
+
+		condition_matrix = self.conditions_matrix
+
+		# 9 total rows in predicted sequence diagram
+		rows = []
+		for i in range(3*self.num_rows):
+			rows.append("")
+
+		# make shallow copy of the predicted sequence (a list of [x,y] coordinates)
+		seq = copy(sequence)
+
+		# to know if we have covered each location on the sequence
+		rendered_node = [0] * len(sequence)
+
+		# if a row has no contents, don't write it out at end
+		empty_rows = [False] * (3*self.num_rows)
+
+		# print out state matrix with a single location ( ) denoting current spot, appended onto
+		# whatever we have so far in the rows[] array (any previous state matrices, iterations)
+		for y in range(self.num_rows):
+
+			above_row = ""
+			below_row = ""
+			full_row  = ""
+			need_above = False
+			need_below = False
+
+			for x in range(self.num_cols):
+
+				above_section = "     "
+				below_section = "     "
+
+				above_section = list(above_section)
+				below_section = list(below_section)
+
+				cur_cond = condition_matrix[y][x].value
+				row = "  "+cur_cond+"  "
+
+				row = list(row)
+
+				if [x,y] in seq:
+					i = seq.index([x,y])
+
+					#if rendered_node[i]>2: print("here")
+
+					last_loc = None
+					next_loc = None
+					if i>0:          last_loc = seq[i-1]
+					if i<len(seq)-1: next_loc = seq[i+1]
+
+					if last_loc is not None:
+						# if the prior location was in the same column
+						if last_loc[0]==x:
+							# if the prior location was in the above neighbor
+							if last_loc[1]==y-1:
+								above_section[2] = '|'
+								need_above = True
+							# if the prior location was in the below neighbor
+							elif last_loc[1]==y+1:
+								below_section[2] = '^'
+								need_below = True
+
+						# if the prior location was in the same row
+						elif last_loc[1]==y:
+							# if the prior location was in the left neighbor
+							if last_loc[0]==x-1: row[0],row[1] = '-','>'
+							# if the prior location was in the right neighbor
+							if last_loc[0]==x+1: row[3],row[4] = '<','-'
+
+					if next_loc is not None:
+						# if the next location is in the same column
+						if next_loc[0]==x:
+							# if the next location is in the above neighbor
+							if next_loc[1]==y-1:
+								above_section[2] = '|'
+								need_above = True
+							# if the next location is in the below neighbor
+							elif next_loc[1]==y+1:
+								below_section[2] = 'v'
+								need_below = True
+
+						# if the next location is in the same row
+						elif next_loc[1]==y:
+							# if the next location is in the left neighbor
+							if next_loc[0]==x-1: row[0],row[1] = '<','-'
+							# if the next location is in the right neighbor
+							if next_loc[0]==x+1: row[3],row[4] = '-','>'
+
+					if seq[len(seq)-1] == [x,y]:
+						row[1] = '('
+						row[3] = ')'
+
+					if seq[0] == [x,y]:
+						row[1] = '['
+						row[3] = ']'
+
+				above_section = "".join(above_section)
+				below_section = "".join(below_section)
+				row = "".join(row)
+
+				above_row += above_section
+				full_row  += row
+				below_row += below_section
+
+			rows[3*y]   += above_row
+			rows[3*y+1] += full_row
+			rows[3*y+2] += below_row
+
+			if need_above==False: empty_rows[3*y] = True
+			if need_below==False: empty_rows[3*y+2] = True
 
 		for i in range(3*self.num_rows):
-			print(rows[i])
+			if not empty_rows[i]:
+				if (i+2)%3 == 0:
+					item =" "+str(int(i/3))
+					while len(item)<5:
+						item += " "
+				else:
+					item = "     "
+				item += "|  "
+				print_row = item+rows[i]
 
-		sys.stdout.write("P:")
-		sys.stdout.write("  ")
-		for p in seq_probabilities:
-			sys.stdout.write(str(p)[:8]+"           ")
-		#sys.stdout.write("\n"+horizontal_delim+"\n")
-		sys.stdout.write("\n...\n")
+				print(print_row)
+
+		#sys.stdout.write("\n"+delim_line+"\n"+delim_line+"\n")
+		sys.stdout.write("\n")
 
 	# desired_item_size: column width in characters
 	#
 	# prints out either a prediction or condition matrix
 	def print_matrix(self,matrix,desired_item_size=20):
-		delim_line = ''.join("_" for _ in range(self.num_cols*desired_item_size+10))
-		sys.stdout.write("\n"+delim_line+"\n")
+
+		x_axis = ""
+		for i in range(self.num_cols):
+			item = str(i)
+			left = True
+			while len(item)<desired_item_size+3:
+				if left:
+					left = False
+					item = " "+item
+				else:
+					left = True
+					item += " "
+			x_axis += item
+		sys.stdout.write("      "+x_axis+"\n")
+
+		delim_line = ''.join("_" for _ in range(self.num_cols*(desired_item_size+3)))
+		#delim_line = delim_line
+		sys.stdout.write("      "+delim_line[:len(delim_line)-1]+"\n")
+
+		idx = -1
 		for row in matrix:
-			sys.stdout.write("| ")
+			idx+=1
+			before = "  "+str(idx)
+			while len(before)<5:
+				before+=" "
+			sys.stdout.write(before+"| ")
 			for item in row:
-				real_item_size = len(str(item.value))
-				sys.stdout.write(str(item.value)[:desired_item_size])
+
+				# if just a string entry
+				if str(item.value)==item.value:
+					real_item_size = len(str(item.value))
+					sys.stdout.write(str(item.value)[:desired_item_size])
+				# if a float entry, write out formatted
+				else:
+					real_item_size = desired_item_size
+					output_str = "%0."+str(desired_item_size-2)+"f"
+					sys.stdout.write(output_str % item.value)
+
 				if real_item_size<desired_item_size:
 					for _ in range(desired_item_size-real_item_size):
 						sys.stdout.write(" ")
@@ -711,9 +990,9 @@ class viterbi_matrix:
 				else:
 					sys.stdout.write(" |")
 			if matrix.index(row) is not len(matrix)-1:
-				sys.stdout.write("\n"+delim_line+"\n")
+				sys.stdout.write("\n     |"+delim_line[:len(delim_line)-1]+"|\n")
 			else:
-				sys.stdout.write("\n"+delim_line+"\n")
+				sys.stdout.write("\n     |"+delim_line[:len(delim_line)-1]+"|\n")
 
 	# prints out information about the current step, i.e. the current
 	# condition matrix (doesn't change over steps), the current prediction
@@ -724,23 +1003,35 @@ class viterbi_matrix:
 		pred_matrix 	 = self.prediction_matrices[-1] # get the last prediction matrix
 		condition_matrix = self.conditions_matrix # get the condition matrix
 
-		delim_line = ''.join("=" for _ in range(self.num_cols*desired_item_size+10))
+		delim_line = ''.join("=" for _ in range(self.num_cols*(desired_item_size+4)))
 		if self.move_index==1:
 			print("\n"+delim_line)
-			print("Initial State")
+			print(" Initial State")
 		else:
-			print(delim_line)
-			print("\nMove Index:\t\t"+str(self.move_index-1))
-			print("Reported Action:\t("+str(self.cur_action)+", "+str(self.cur_reading)+")")
+			print("\n"+delim_line)
+			print(" Move Index:\t\t"+str(self.move_index-1))
+			print(" Reported Action:\t("+str(self.cur_action)+", "+str(self.cur_reading)+")")
 
 		if condition_matrix is not None and self.print_condition:
-			sys.stdout.write("\nCondition Matrix:")
-			self.print_matrix(condition_matrix,5)
+			sys.stdout.write("\n Condition Matrix:\n")
+			self.print_matrix(condition_matrix,4)
 
 		if len(self.transition_matrices)!=0 and self.print_transition:
-			sys.stdout.write("\nTransition Matrix:")
+			sys.stdout.write("\n Transition Matrix:\n")
 			self.print_matrix(self.transition_matrices[-1],desired_item_size)
 
 		if pred_matrix is not None and not self.show_all:
-			sys.stdout.write("\nPrediction Matrix:")
+			sys.stdout.write("\n\n Prediction Matrix:\n")
 			self.print_matrix(pred_matrix,desired_item_size)
+
+		if self.actual_traversal_path!=None and self.print_actual_traversal:
+			if self.move_index!=1:
+				sys.stdout.write("\n Current ACTUAL Agent Traversal (trimd. to length of predicted)...\n")
+				if len(self.actual_traversal_path)<=self.current_predicted_length+1:
+					print_seq = self.actual_traversal_path
+				else:
+					print_seq = self.actual_traversal_path[:self.current_predicted_length+1]
+				self.print_single_sequence(print_seq)
+			else:
+				sys.stdout.write("\n Full ACTUAL Agent Traversal Path { end=(), start=[] }...\n")
+				self.print_single_sequence(self.actual_traversal_path)
