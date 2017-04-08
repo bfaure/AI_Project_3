@@ -18,7 +18,7 @@ def main():
 	v = viterbi_matrix(load_path=tsv)
 
 	seq = map_dir+"traversal_0.txt"
-	v.load_observations(seq,grid_buffer_size=0,path=False)
+	v.load_observations(seq,grid_buffer_size=0,path=True)
 
 	'''
 	num_grid_files = 10

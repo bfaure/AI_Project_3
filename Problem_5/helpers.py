@@ -23,6 +23,9 @@ class viterbi_node:
 		self.value = ""
 		self.parent = None
 
+		self.best_path = None
+		self.best_path_cost = None
+
 class viterbi_matrix:
 	def __init__(self,num_rows=3,num_cols=3,values=["H","H","T","N","N","N","N","B","H"],load_path=None):
 		# Questions A & B...
@@ -85,7 +88,7 @@ class viterbi_matrix:
 	# originally 500x500 but the agent rarely makes if very far to justify that large of a search
 	# space) - see self.adjust_environment_bounds()
 	def load_observations(self,observation_path,grid_buffer_size=None,path=False,method="default"):
-		
+
 		# ensure the file exists
 		if not os.path.exists(observation_path):
 			print("\nWARNING: Could not find "+observation_path+"\n")
@@ -136,6 +139,9 @@ class viterbi_matrix:
 		# trim the environment down to a smaller area containing the real movement of the agent
 		if grid_buffer_size is not None: self.adjust_environment_bounds(grid_buffer_size)
 
+		#if method=="default":
+		#	# current working method...
+
 		self.init_prediction_matrix()
 
 		self.print_transition       = True
@@ -145,7 +151,8 @@ class viterbi_matrix:
 		self.move_index = 1
 		self.current_predicted_length = 1
 
-		self.print_current_state(5)
+		print_size = 6
+		self.print_current_state(print_size)
 
 		max_limit = len(self.queued_readings)
 		#max_limit = 10
@@ -162,7 +169,7 @@ class viterbi_matrix:
 			self.update_weights()
 
 			# print out current state information
-			self.print_current_state(6)
+			self.print_current_state(print_size)
 
 			# if calculating the most likely sequences as well...
 			if path:
@@ -186,6 +193,27 @@ class viterbi_matrix:
 			print("\nPredicted Final Location: ("+str(pred_final_loc[0])+", "+str(pred_final_loc[1])+")")
 			print("Predicted traversal path length: "+str(len(pred_seq)))
 		print("\n")
+
+		#else:
+		#	# testing new ideas ...
+
+		#	self.init_trellis()
+
+	'''
+	# initialize probability trellis where each element is a single nxn grid of floats representing
+	# the probability of being at a certain location [x,y] in the grid at a certain move index
+	def init_trellis(self):
+		self.trellis = []
+		init_probability = 1.0/float(self.num_rows*self.num_cols-self.get_num_blocked_cells())
+		for step in range(len(self.queued_actions)):
+			grid = []
+			for y in range(self.num_rows):
+				row = []
+				for x in range(self.num_cols):
+					new_node = viterbi_node()
+					new_node.value = init_probability if self.conditions_matrix[y][x].value!="B" else 0.0
+					row.append()
+	'''
 
 	# various methods for ensuring data validity
 	def check_validity(self):
@@ -317,7 +345,10 @@ class viterbi_matrix:
 				elif condition_matrix[y][x].value==cur_reading: transition_matrix[y][x].value = 0.9
 
 				# in this state only if there was a mis-reading of the cur_reading
-				else: transition_matrix[y][x].value = 0.1
+			else: transition_matrix[y][x].value = 0.05
+
+		# NEW: normalizing the transition_matrix (effectively the emission matrix for current step)
+		#transition_matrix = self.normalize_matrix(transition_matrix)
 
 		# set probabilities given the reported movement (cur_action) compared to condition neighbors
 		#
@@ -384,6 +415,9 @@ class viterbi_matrix:
 					if y==0:
 						if condition_matrix[y+1][x].value=="B": transition_matrix[y][x].value *= 0.9
 						else:							  		transition_matrix[y][x].value *= 0.1
+
+		# NEW: normalizing the transition_matrix (effectively the emission matrix for current step)
+		transition_matrix = self.normalize_matrix(transition_matrix)
 
 		# add new transition matrix to list of prior transition matrices
 		self.transition_matrices.append(copy(transition_matrix))
