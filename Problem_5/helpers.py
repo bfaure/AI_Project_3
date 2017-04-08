@@ -4,6 +4,20 @@ import random
 import os
 from copy import deepcopy, copy
 
+def get_sequence_bounds(sequence):
+	y_max, x_max, x_min, y_min = None, None, None, None
+	for x,y in sequence:
+		if x_max==None: x_max = x
+		if x_min==None: x_min = x
+		if y_max==None: y_max = y
+		if y_min==None: y_min = y
+
+		if x<x_min: x_min = x
+		if x>x_max: x_max = x
+		if y<y_min: y_min = y
+		if y>y_max: y_max = y
+	return x_max,y_max,x_min,y_min
+
 class viterbi_node:
 	def __init__(self):
 		self.value = ""
@@ -17,7 +31,7 @@ class viterbi_matrix:
 			self.num_cols = num_cols
 			self.values = values
 			self.init_conditions_matrix(values)
-			self.init_prediction_matrix(values)
+			self.init_prediction_matrix()
 
 		# Question D...
 		else:
@@ -59,7 +73,13 @@ class viterbi_matrix:
 		f.close()
 
 	# loads in an observation file (.txt)
-	def load_observations(self,observation_path):
+	# if buffer_size=None then none of the original conditions_matrix will be trimmed, if
+	# buffer_size is a positive integer then we will find the outer bounds of the actual
+	# traversal path and add buffer_size to those bounds, translate the actual traversal path
+	# accordingly and trim the conditions_matrix down to said bounds (the conditions_matrices are
+	# originally 500x500 but the agent rarely makes if very far to justify that large of a search
+	# space)
+	def load_observations(self,observation_path,buffer_size=None):
 		# ensure the file exists
 		if not os.path.exists(observation_path):
 			print("\nWARNING: Could not find "+observation_path+"\n")
@@ -101,9 +121,50 @@ class viterbi_matrix:
 		print("Path: "+str(len(self.actual_traversal_path))+", Observations: "+str(len(self.observed_readings)))
 
 		self.transition_matrices = []
-		self.prediction_matrices = []
+
+		# trim the environment down to a smaller area containing the real movement of the agent
+		if buffer_size is not None: self.adjust_environment_bounds(buffer_size)
 
 
+		self.init_prediction_matrix()
+
+	# given that the actual path taken by the agent rarely fills anywhere near the entire conditions_matrix
+	# we can choose to trim the conditions_matrix down to fit the range of the path taken
+	def adjust_environment_bounds(self,buffer_size=10):
+		sys.stdout.write("\nAdjusting bounds... ")
+		x_max,y_max,x_min,y_min = get_sequence_bounds(self.actual_traversal_path)
+
+		preferred_x_max = x_max+buffer_size if (x_max+buffer_size)<self.num_cols else self.num_cols-1
+		preferred_y_max = y_max+buffer_size if (y_max+buffer_size)<self.num_rows else self.num_rows-1
+		preferred_x_min = x_min-buffer_size if (x_min-buffer_size)>=0 			 else 0
+		preferred_y_min = y_min-buffer_size if (y_min-buffer_size)>=0 			 else 0
+
+		sys.stdout.write("x_off: "+str(preferred_x_min)+", y_off: "+str(preferred_y_min)+" ")
+
+		self.translate_actual_path(-1*preferred_x_min,-1*preferred_y_min)
+		self.trim_conditions_matrix(preferred_x_max,preferred_y_max,preferred_x_min,preferred_y_min)
+
+		self.num_rows = preferred_y_max-preferred_y_min
+		self.num_cols = preferred_x_max-preferred_x_min
+		sys.stdout.write("rows: "+str(self.num_rows)+", cols: "+str(self.num_cols)+"\n")
+
+	# translates the coordinates of the actual traversal path
+	def translate_actual_path(self,x_offset,y_offset):
+		for i in range(len(self.actual_traversal_path)):
+			self.actual_traversal_path[i] = [self.actual_traversal_path[i][0]+x_offset,self.actual_traversal_path[i][1]+y_offset]
+
+	def trim_conditions_matrix(self,x_max,y_max,x_min,y_min):
+		self.conditions_matrix = self.conditions_matrix[y_min:y_max+1]
+		for i in range(len(self.conditions_matrix)):
+			self.conditions_matrix[i] = self.conditions_matrix[i][x_min:x_max+1]
+
+	# returns the number of blocked cells in the self.conditions_matrix
+	def get_num_blocked_cells(self):
+		num_blocked = 0
+		for y in range(self.num_rows):
+			for x in range(self.num_cols):
+				if self.conditions_matrix[y][x]=="B": num_blocked+=1
+		return num_blocked
 
 	# creates a new condition matrix given the provided conditions
 	def init_conditions_matrix(self,conditions=None):
@@ -120,16 +181,16 @@ class viterbi_matrix:
 	# clears the current prediction_matrices list and creates a new prediction matrix
 	# to be inserted at the first location in the list, all initial probabilities are set to 1/8
 	# besides the location containing "B" which has it's probability set to 0
-	def init_prediction_matrix(self,conditions=None):
+	def init_prediction_matrix(self):
+		init_probability = 1.0/(float(self.num_rows*self.num_cols)-float(self.get_num_blocked_cells()))
 		self.prediction_matrices = []
 		cells = []
 		for y in range(self.num_rows):
 			row = []
 			for x in range(self.num_cols):
 				new_node = viterbi_node()
-				new_node.value = float(0.125)
-				if self.values[y*self.num_cols+x] is "B":
-					new_node.value = 0.0
+				new_node.value = init_probability
+				if self.conditions_matrix[y][x]=="B": new_node.value = 0.0
 				row.append(new_node)
 			cells.append(row)
 		self.prediction_matrices.append(cells)
