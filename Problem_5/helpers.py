@@ -686,7 +686,7 @@ class viterbi_matrix:
 			new_coords = last_location.coords
 			best_path.insert(0,new_coords)
 
-		return [best_path,[path_prob]]
+		return [best_path[1:],[path_prob]]
 
 
 
@@ -969,12 +969,29 @@ class viterbi_matrix:
 				row = list(row)
 
 				if [x,y] in seq: # if this spot is in the traversal sequence
+
 					i = seq.index([x,y])
+					skip = False
+
+					if rendered_node[i]==1:
+						i+=1
+						while True:
+							if i==len(seq):
+								skip = True
+								break
+							if x==seq[i][0] and y==seq[i][1]:
+								if rendered_node[i]==0:
+									rendered_node[i] = 1
+									skip = False
+									break
+							i+=1
 
 					last_loc = None
 					next_loc = None
-					if i>0:          last_loc = seq[i-1] # if there was an earlier element in sequence
-					if i<len(seq)-1: next_loc = seq[i+1] # if there is another element in sequence
+
+					if not skip:
+						if i>0:          last_loc = seq[i-1] # if there was an earlier element in sequence
+						if i<len(seq)-1: next_loc = seq[i+1] # if there is another element in sequence
 
 					if last_loc is not None:
 						# if the prior location was in the same column
@@ -1024,6 +1041,7 @@ class viterbi_matrix:
 						row[1] = '['
 						row[3] = ']'
 
+
 				above_section = "".join(above_section) # turn list to string
 				below_section = "".join(below_section) # turn list to string
 				row = "".join(row) # turn list to string
@@ -1032,6 +1050,8 @@ class viterbi_matrix:
 				above_row += above_section
 				full_row  += row
 				below_row += below_section
+
+
 
 			rows[3*y]   += above_row
 			rows[3*y+1] += full_row
@@ -1130,15 +1150,15 @@ class viterbi_matrix:
 
 		if condition_matrix is not None and self.print_condition:
 			sys.stdout.write("\n Condition Matrix:\n")
-			self.print_matrix(condition_matrix,4)
+			self.print_matrix(condition_matrix,desired_item_size)
 
 		if len(self.transition_matrices)!=0 and self.print_transition:
 			sys.stdout.write("\n Transition Matrix:\n")
 			self.print_matrix(self.transition_matrices[-1],desired_item_size)
 
 		if self.temp_anc_matrix is not None:
-			print("\nAncestors Matrix: ")
-			self.print_matrix(self.temp_anc_matrix,8)
+			print("\n Ancestors Matrix: ")
+			self.print_matrix(self.temp_anc_matrix,desired_item_size)
 
 		if pred_matrix is not None and not self.show_all:
 			sys.stdout.write("\n\n Current Probability Matrix:\n")

@@ -10,22 +10,22 @@ from helpers import viterbi_matrix, viterbi_node
 
 def main():
 
-	data_dir = "../Question_C/data/"
+	src_dir = "../Question_C/data/"
 
-	map_dir = data_dir+"map_0/"
+	map_dir = src_dir+"map_1/"
 
-	tsv = map_dir+"grid_0.tsv"
+	tsv = map_dir+"grid_1.tsv"
 	v = viterbi_matrix(load_path=tsv)
 
 	seq = map_dir+"traversal_0.txt"
-	v.load_observations(seq,grid_buffer_size=0,path=True)
+	v.load_observations(seq,grid_buffer_size=5,path=True)
 
 	'''
 	num_grid_files = 10
 	traversals_per_file = 10
 
 	for grid_idx in range(num_grid_files):
-		map_dir = data_dir+"map_"+str(grid_idx)+"/"
+		map_dir = src_dir+"map_"+str(grid_idx)+"/"
 		tsv = map_dir+"grid_"+str(grid_idx)+".tsv"
 		v = viterbi_matrix(load_path=tsv)
 
