@@ -11,6 +11,7 @@ from matplotlib import pyplot as plt
 from matplotlib import cm
 from matplotlib import mlab as ml
 from matplotlib import colors
+
 def get_sequence_bounds(sequence):
 	y_max, x_max, x_min, y_min = None, None, None, None
 	for x,y in sequence:
@@ -94,6 +95,9 @@ class viterbi_matrix:
 	def init_plot_directory(self,save_dir):
 		# check to ensure directory structure exists
 		path_items = save_dir.split("/")
+		self.map_name = path_items[1]
+		self.traversal_name = path_items[2]
+
 		if not os.path.exists(path_items[0]):
 			os.makedirs(path_items[0])
 		else:
@@ -232,8 +236,9 @@ class viterbi_matrix:
 			#if i in [9,49,99]: self.save_heatmap(i)
 			if save_dir is not None:
 				#if i in [9,49,99]:
-				if (i+1)%5==0:
-					self.save_heatmap(i+1)
+				#if (i+1)%5==0:
+				#if i%2==1:
+				self.save_heatmap(i+1)
 				self.save_prediction_matrix(i+1)
 
 				log_file.write("Iteration #"+str(i)+"\n")
@@ -343,7 +348,7 @@ class viterbi_matrix:
 		Z = np.array(scaled_zs)
 
 		fig,ax = plt.subplots()
-		fig.suptitle("Probabilities - Iteration #"+str(iteration),fontsize=12,y=1.02)
+		fig.suptitle(self.map_name+" - "+self.traversal_name+" - ("+str(iteration)+")",fontsize=12,y=1.02)
 
 		ax.set_xlabel("X Coordinate")
 		ax.set_ylabel("Y Coordinate")
@@ -354,16 +359,13 @@ class viterbi_matrix:
 		ax.annotate('Actual Location',xy=(actual_location[0],actual_location[1]),xytext=(0,0),
 					arrowprops=dict(facecolor='white',shrink=0.05), color='white')
 
-		#pcm = ax.pcolor(X,Y,Z,norm=colors.LogNorm(),cmap='plasma')
-		#cax = ax.pcolor(X,Y,Z,norm=colors.LogNorm(),cmap='plasma')
-
 		cax = ax.imshow(Z,cmap='plasma',norm=colors.LogNorm(vmin=smallest_scaled_z, vmax=1.0))
 		#cax = ax.imshow(Z,cmap='plasma')
 		cbar = fig.colorbar(cax, ticks=[smallest_scaled_z,Z.max()])
 		cbar.ax.set_yticklabels(['0.0',str(Z.max())[:7]])
 
 		save_spot = self.save_base+"prediction-heatmap-"+str(iteration)+".png"
-		fig.savefig(save_spot,bbox_inches='tight',dpi=100)
+		fig.savefig(save_spot,bbox_inches='tight',dpi=180)
 		plt.close()
 
 	# various methods for ensuring data validity

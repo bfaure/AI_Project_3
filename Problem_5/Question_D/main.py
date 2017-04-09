@@ -32,7 +32,7 @@ def make_gif(parent_folder):
 		if len(png_filenames)==0: break
 	png_filenames = sorted_png
 
-	with imageio.get_writer(parent_folder+"/prediction-heatmap.gif", mode='I',duration=0.5) as writer:
+	with imageio.get_writer(parent_folder+"/prediction-heatmap.gif", mode='I',duration=0.2) as writer:
 		for filename in png_filenames:
 			image = imageio.imread(parent_folder+"/"+filename)
 			writer.append_data(image)
@@ -42,9 +42,10 @@ def main():
 	src_dir = "../Question_C/data/"
 	runtime_code = str(int(time.time()))
 
-	num_grid_files = 1
-	traversals_per_file = 1
+	num_grid_files = 10
+	traversals_per_file = 10
 	buf_len = 0
+	overall_total_score = 0
 
 	for grid_idx in range(num_grid_files):
 		map_dir = src_dir+"map_"+str(grid_idx)+"/"
@@ -63,9 +64,11 @@ def main():
 		data_file.write("Total Score: "+str(total_score)+"\n")
 		data_file.write("Buffer Size: "+str(buf_len)+"\n")
 		data_file.close()
+		overall_total_score+=total_score
 
 	end_time = time.time()
 	print("\nDone. Total time: "+str(end_time-start_time)[:7]+" seconds")
+	print("Overall total score: "+str(overall_total_score))
 	dir_name = "exec_data-"+runtime_code
 	os.rename(dir_name,dir_name+"-(complete)")
 
