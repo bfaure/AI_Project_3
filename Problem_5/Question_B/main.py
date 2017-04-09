@@ -18,7 +18,7 @@ def main():
 	#readings = ["N","N","H","H","N","H","T","N","H"]
 
 	v_matrix = viterbi_matrix() # construct object from helpers.py file
-	v_matrix.init_observations(actions,readings,path=True,print_condition=True,print_transition=True) # execute operation
+	v_matrix.init_observations(actions,readings,path=True,print_condition=False,print_transition=False) # execute operation
 
 if __name__ == '__main__':
 	main()

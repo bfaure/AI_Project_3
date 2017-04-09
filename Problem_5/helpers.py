@@ -4,6 +4,7 @@ import random
 import os
 from copy import deepcopy, copy
 from shutil import rmtree
+from math import log10,log1p
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -35,6 +36,7 @@ class viterbi_node:
 class viterbi_matrix:
 	def __init__(self,num_rows=3,num_cols=3,values=["H","H","T","N","N","N","N","B","H"],load_path=None):
 		self.temp_anc_matrix = None # debugging
+		self.display_temp_ancestor_matrix = False
 
 		# Questions A & B...
 		if load_path is None:
@@ -230,7 +232,8 @@ class viterbi_matrix:
 			#if i in [9,49,99]: self.save_heatmap(i)
 			if save_dir is not None:
 				#if i in [9,49,99]:
-				self.save_heatmap(i+1)
+				if (i+1)%5==0:
+					self.save_heatmap(i+1)
 				self.save_prediction_matrix(i+1)
 
 				log_file.write("Iteration #"+str(i)+"\n")
@@ -262,6 +265,7 @@ class viterbi_matrix:
 
 		if save_dir is not None:
 			final_loc = self.actual_traversal_path[-1]
+			self.save_actual_sequence()
 			log_file.write("\n\nActual Final Location ("+str(final_loc[0])+", "+str(final_loc[1])+")\n")
 			log_file.write("Actual traversal path length: "+str(len(self.actual_traversal_path))+"\n")
 
@@ -307,6 +311,9 @@ class viterbi_matrix:
 		cur_pred_matrix = self.prediction_matrices[-1]
 		actual_location = self.actual_traversal_path[self.current_predicted_length-1]
 
+		X = np.arange(0,self.num_cols)
+		Y = np.arange(0,self.num_rows)
+
 		zs = []
 		smallest_z = 10
 
@@ -314,15 +321,30 @@ class viterbi_matrix:
 			row = []
 			for x in range(self.num_cols):
 				row.append(float(cur_pred_matrix[y][x].value))
-				if cur_pred_matrix[y][x].value < smallest_z and cur_pred_matrix[y][x]!=0:
+				if cur_pred_matrix[y][x].value<smallest_z and cur_pred_matrix[y][x].value!=0:
 					smallest_z = cur_pred_matrix[y][x].value
 			zs.append(row)
-		Z = np.array(zs)
+
+		scaled_zs = []
+		smallest_scaled_z = 100
+		for y in range(self.num_rows):
+			row = []
+			for x in range(self.num_cols):
+				if zs[y][x]==0.0:
+					val = smallest_z-(smallest_z/2.0)
+				else:
+					val = zs[y][x]
+
+				#logged_val = log1p(val)
+				logged_val = val
+				if logged_val<smallest_scaled_z: smallest_scaled_z = logged_val
+				row.append(logged_val)
+			scaled_zs.append(row)
+		Z = np.array(scaled_zs)
 
 		fig,ax = plt.subplots()
-		fig.suptitle("Probabilities - Iteration #"+str(iteration),fontsize=12,y=1.04)
+		fig.suptitle("Probabilities - Iteration #"+str(iteration),fontsize=12,y=1.02)
 
-		#ax.set_title("Probabilities - Iteration #"+str(iteration))
 		ax.set_xlabel("X Coordinate")
 		ax.set_ylabel("Y Coordinate")
 
@@ -332,9 +354,13 @@ class viterbi_matrix:
 		ax.annotate('Actual Location',xy=(actual_location[0],actual_location[1]),xytext=(0,0),
 					arrowprops=dict(facecolor='white',shrink=0.05), color='white')
 
-		cax = ax.imshow(Z,cmap='plasma',vmin=0.0, vmax=1.0)
-		cbar = fig.colorbar(cax, ticks=[0.0,Z.max(),1.0])
-		cbar.ax.set_yticklabels(['0.0',str(Z.max())[:7],'1.0'])
+		#pcm = ax.pcolor(X,Y,Z,norm=colors.LogNorm(),cmap='plasma')
+		#cax = ax.pcolor(X,Y,Z,norm=colors.LogNorm(),cmap='plasma')
+
+		cax = ax.imshow(Z,cmap='plasma',norm=colors.LogNorm(vmin=smallest_scaled_z, vmax=1.0))
+		#cax = ax.imshow(Z,cmap='plasma')
+		cbar = fig.colorbar(cax, ticks=[smallest_scaled_z,Z.max()])
+		cbar.ax.set_yticklabels(['0.0',str(Z.max())[:7]])
 
 		save_spot = self.save_base+"prediction-heatmap-"+str(iteration)+".png"
 		fig.savefig(save_spot,bbox_inches='tight',dpi=100)
@@ -351,7 +377,7 @@ class viterbi_matrix:
 	# given that the actual path taken by the agent rarely fills anywhere near the entire conditions_matrix
 	# we can choose to trim the conditions_matrix down to fit the range of the path taken
 	def adjust_environment_bounds(self,buffer_size=10):
-		sys.stdout.write("Adjusting bounds... ")
+		#sys.stdout.write("Adjusting bounds... ")
 		x_max,y_max,x_min,y_min = get_sequence_bounds(self.actual_traversal_path)
 
 		preferred_x_max = x_max+buffer_size if (x_max+buffer_size)<self.num_cols else self.num_cols-1
@@ -359,7 +385,7 @@ class viterbi_matrix:
 		preferred_x_min = x_min-buffer_size if (x_min-buffer_size)>=0 			 else 0
 		preferred_y_min = y_min-buffer_size if (y_min-buffer_size)>=0 			 else 0
 
-		sys.stdout.write("x_off: "+str(preferred_x_min)+", y_off: "+str(preferred_y_min)+" ")
+		#sys.stdout.write("x_off: "+str(preferred_x_min)+", y_off: "+str(preferred_y_min)+" ")
 
 		self.start_location = [self.start_location[0]-preferred_x_min,self.start_location[1]-preferred_y_min]
 
@@ -368,7 +394,7 @@ class viterbi_matrix:
 
 		self.num_rows = preferred_y_max-preferred_y_min+1
 		self.num_cols = preferred_x_max-preferred_x_min+1
-		sys.stdout.write("rows: "+str(self.num_rows)+", cols: "+str(self.num_cols)+"\n")
+		#sys.stdout.write("rows: "+str(self.num_rows)+", cols: "+str(self.num_cols)+"\n")
 
 	# translates the coordinates of the actual traversal path
 	def translate_actual_path(self,x_offset,y_offset):
@@ -508,13 +534,6 @@ class viterbi_matrix:
 
 			for x in range(self.num_cols):
 
-				#if prior_transition_matrix!=None:
-				#	continue
-
-				# REMOVE THIS
-				# if the current location is a blocked cell, it will have already been set to P = 0.0
-				#if condition_matrix[y][x].value=="B": continue
-
 				# if the reported action was a translation to the right
 				if cur_action in ["Right","R"]:
 					# if in an inner column
@@ -626,9 +645,6 @@ class viterbi_matrix:
 
 			ancestors.append(ancestor_row)
 
-		#print("\n transition_matrix... (before normalization)")
-		#self.print_matrix(transition_matrix,10)
-
 		temp_anc_matrix = []
 		for y in range(self.num_rows):
 			row = []
@@ -637,9 +653,7 @@ class viterbi_matrix:
 				new_node.value = "("+str(ancestors[y][x][0])+","+str(ancestors[y][x][1])+")"
 				row.append(new_node)
 			temp_anc_matrix.append(row)
-		#print("\nAncestors Matrix: ")
 		self.temp_anc_matrix = temp_anc_matrix
-		#self.print_matrix(temp_anc_matrix,6)
 
 		# NEW: normalizing the transition_matrix (effectively the emission matrix for current step)
 		transition_matrix = self.normalize_matrix(transition_matrix)
@@ -653,21 +667,6 @@ class viterbi_matrix:
 
 		# normalize the new prediction matrix
 		new_pred_matrix = self.normalize_matrix(new_pred_matrix)
-		#new_pred_matrix = deepcopy(new_pred_matrix)
-
-		'''
-		# point each element of the new prediction matrix to it's ancestor in the prior prediction matrix
-		if len(self.prediction_matrices)==0:
-			for y in range(self.num_rows):
-				for x in range(self.num_cols):
-					new_pred_matrix[y][x].parent = None
-					new_pred_matrix[y][x].transition_prob = transition_matrix[y][x].value
-		else:
-			for y in range(self.num_rows):
-				for x in range(self.num_cols):
-					new_pred_matrix[y][x].parent = self.prediction_matrices[-1][y][x]
-					new_pred_matrix[y][x].transition_prob = transition_matrix[y][x].value
-		'''
 
 		# add new prediction matrix to list
 		self.prediction_matrices.append(new_pred_matrix)
@@ -739,7 +738,7 @@ class viterbi_matrix:
 			self.print_matrix(self.conditions_matrix,3)
 
 		self.move_index = 1
-		self.print_current_state(6)
+		#self.print_current_state(6)
 
 		for self.cur_action,self.cur_reading in zip(seen_actions,seen_readings):
 
@@ -750,7 +749,7 @@ class viterbi_matrix:
 			self.update_weights()
 
 			# print out current state information
-			self.print_current_state(6)
+			self.print_current_state(8)
 
 			if path:
 				# get the current sequence
@@ -848,8 +847,14 @@ class viterbi_matrix:
 		seen_actions     = self.observed_actions
 		seen_readings    = self.observed_readings
 
-		print "\n Predicted Sequence:",predicted_seq
-		sys.stdout.write("\n")
+		sys.stdout.write("\n Predicted Sequence: \n")
+		seq_str = ""
+		idx=0
+		for a,b in predicted_seq:
+			idx+=1
+			if idx%6==0: sys.stdout.write("\n")
+			sys.stdout.write(" ("+str(a)+","+str(b)+")")
+		sys.stdout.write("\n\n")
 
 		# 9 total rows in predicted sequence diagram
 		rows = []
@@ -1005,15 +1010,23 @@ class viterbi_matrix:
 		sys.stdout.write("      "+horizontal_delim)
 		sys.stdout.write("\n")
 
-		sys.stdout.write("\n Predicted Sequence Probability: ")
+		sys.stdout.write("\n Seq. Probability: ")
 		sys.stdout.write(str(seq_probabilities[-1])[:8])
 		sys.stdout.write("\n")
 
 	# writes out to specified device
 	def _write_single_sequence(self,sequence,print_seq=True,device=None):
 		if print_seq:
-		  device.write("  "+" ".join("["+str(a)+","+str(b)+"]" for [a,b] in sequence))
-		  device.write("\n\n")
+			device.write("\n ")
+			seq_str = ""
+			idx=0
+			for a,b in sequence:
+				idx+=1
+				if idx%6==0: device.write("\n")
+				device.write(" ("+str(a)+","+str(b)+")")
+
+		  #device.write("  "+" ".join("["+str(a)+","+str(b)+"]" for [a,b] in sequence))
+		  #device.write("\n\n")
 
 		device.write("\n")
 
@@ -1319,7 +1332,7 @@ class viterbi_matrix:
 			sys.stdout.write("\n Transition Matrix:\n")
 			self.print_matrix(self.transition_matrices[-1],desired_item_size)
 
-		if self.temp_anc_matrix is not None:
+		if self.temp_anc_matrix is not None and self.display_temp_ancestor_matrix:
 			print("\n Ancestors Matrix: ")
 			self.print_matrix(self.temp_anc_matrix,desired_item_size)
 
