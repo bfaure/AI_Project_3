@@ -227,7 +227,7 @@ class viterbi_matrix:
 					sys.stdout.write(", Score = "+str(score)+")...\n")
 					self.print_single_sequence(pred_seq)
 				else:
-					sys.stdout.write("\rExecuting... score: "+str(score)+", total: "+str(total_score)+" ")
+					sys.stdout.write("\rExecuting... "+"("+str(i+1)+"/"+str(max_limit)+") score: "+str(score)+", total: "+str(total_score)+" ")
 					sys.stdout.flush()
 
 				if save_dir is not None:

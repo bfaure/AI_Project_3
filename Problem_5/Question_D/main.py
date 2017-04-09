@@ -42,8 +42,8 @@ def main():
 	src_dir = "../Question_C/data/"
 	runtime_code = str(int(time.time()))
 
-	num_grid_files = 10
-	traversals_per_file = 10
+	num_grid_files = 1
+	traversals_per_file = 1
 	buf_len = 0
 	overall_total_score = 0
 
