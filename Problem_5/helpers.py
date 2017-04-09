@@ -28,6 +28,8 @@ class viterbi_node:
 
 class viterbi_matrix:
 	def __init__(self,num_rows=3,num_cols=3,values=["H","H","T","N","N","N","N","B","H"],load_path=None):
+		self.temp_anc_matrix = None # debugging
+
 		# Questions A & B...
 		if load_path is None:
 			self.actual_traversal_path = None
@@ -139,13 +141,10 @@ class viterbi_matrix:
 		# trim the environment down to a smaller area containing the real movement of the agent
 		if grid_buffer_size is not None: self.adjust_environment_bounds(grid_buffer_size)
 
-		#if method=="default":
-		#	# current working method...
-
 		self.init_prediction_matrix()
 
 		self.print_transition       = True
-		self.print_condition  	    = False
+		self.print_condition  	    = True
 		self.print_actual_traversal = True
 
 		self.move_index = 1
@@ -194,27 +193,6 @@ class viterbi_matrix:
 			print("Predicted traversal path length: "+str(len(pred_seq)))
 		print("\n")
 
-		#else:
-		#	# testing new ideas ...
-
-		#	self.init_trellis()
-
-	'''
-	# initialize probability trellis where each element is a single nxn grid of floats representing
-	# the probability of being at a certain location [x,y] in the grid at a certain move index
-	def init_trellis(self):
-		self.trellis = []
-		init_probability = 1.0/float(self.num_rows*self.num_cols-self.get_num_blocked_cells())
-		for step in range(len(self.queued_actions)):
-			grid = []
-			for y in range(self.num_rows):
-				row = []
-				for x in range(self.num_cols):
-					new_node = viterbi_node()
-					new_node.value = init_probability if self.conditions_matrix[y][x].value!="B" else 0.0
-					row.append()
-	'''
-
 	# various methods for ensuring data validity
 	def check_validity(self):
 		# check that all prediction_matrices are of the same size as the conditions_matrix
@@ -235,6 +213,8 @@ class viterbi_matrix:
 		preferred_y_min = y_min-buffer_size if (y_min-buffer_size)>=0 			 else 0
 
 		sys.stdout.write("x_off: "+str(preferred_x_min)+", y_off: "+str(preferred_y_min)+" ")
+
+		self.start_location = [self.start_location[0]-preferred_x_min,self.start_location[1]-preferred_y_min]
 
 		self.translate_actual_path(-1*preferred_x_min,-1*preferred_y_min)
 		self.trim_conditions_matrix(preferred_x_max,preferred_y_max,preferred_x_min,preferred_y_min)
@@ -277,19 +257,35 @@ class viterbi_matrix:
 	# clears the current prediction_matrices list and creates a new prediction matrix
 	# to be inserted at the first location in the list, all initial probabilities are set to 1/8
 	# besides the location containing "B" which has it's probability set to 0
-	def init_prediction_matrix(self):
-		init_probability = 1.0/float(self.num_rows*self.num_cols-self.get_num_blocked_cells())
-		self.prediction_matrices = []
-		cells = []
-		for y in range(self.num_rows):
-			row = []
-			for x in range(self.num_cols):
-				new_node = viterbi_node()
-				new_node.value = init_probability
-				if self.conditions_matrix[y][x].value=="B": new_node.value = 0.0
-				row.append(new_node)
-			cells.append(row)
-		self.prediction_matrices.append(cells)
+	def init_prediction_matrix(self,start_location=None):
+		if start_location==None:
+			init_probability = 1.0/float(self.num_rows*self.num_cols-self.get_num_blocked_cells())
+			self.prediction_matrices = []
+			cells = []
+			for y in range(self.num_rows):
+				row = []
+				for x in range(self.num_cols):
+					new_node = viterbi_node()
+					new_node.parent = None
+					new_node.coords = [x,y]
+					new_node.value = init_probability if self.conditions_matrix[y][x].value!="B" else 0.0
+					#if self.conditions_matrix[y][x].value=="B": new_node.value = 0.0
+					row.append(new_node)
+				cells.append(row)
+			self.prediction_matrices.append(cells)
+		else:
+			self.prediction_matrices = []
+			cells = []
+			for y in range(self.num_rows):
+				row = []
+				for x in range(self.num_cols):
+					new_node = viterbi_node()
+					new_node.parent = None
+					new_node.coords = [x,y]
+					new_node.value = 1.0 if x==start_location[0] and y==start_location[1] else 0.0
+					row.append(new_node)
+				cells.append(row)
+			self.prediction_matrices.append(cells)
 
 	# add a single observed action and observed reading while also incrementing the move index
 	def add_observation(self):
@@ -304,9 +300,9 @@ class viterbi_matrix:
 			row = []
 			for x in range(self.num_cols):
 				new_node = viterbi_node()
-				new_node.value = float(1/8)
-				if new_node.value is "B":
-					new_node.value = 1.0
+				new_node.value = 0.0
+				new_node.parent = None
+				new_node.coords = [x,y]
 				row.append(new_node)
 			cells.append(row)
 		return cells
@@ -345,16 +341,28 @@ class viterbi_matrix:
 				elif condition_matrix[y][x].value==cur_reading: transition_matrix[y][x].value = 0.9
 
 				# in this state only if there was a mis-reading of the cur_reading
-			else: transition_matrix[y][x].value = 0.05
+				else: transition_matrix[y][x].value = 0.1
 
 		# NEW: normalizing the transition_matrix (effectively the emission matrix for current step)
 		#transition_matrix = self.normalize_matrix(transition_matrix)
+
+		if len(self.transition_matrices)>0:
+			prior_transition_matrix = self.transition_matrices[-1]
+		else:
+			prior_transition_matrix = None
+
+		ancestors = []
 
 		# set probabilities given the reported movement (cur_action) compared to condition neighbors
 		#
 		# iterate over all possible current locations
 		for y in range(self.num_rows):
+			ancestor_row = []
+
 			for x in range(self.num_cols):
+
+				#if prior_transition_matrix!=None:
+				#	continue
 
 				# REMOVE THIS
 				# if the current location is a blocked cell, it will have already been set to P = 0.0
@@ -363,72 +371,144 @@ class viterbi_matrix:
 				# if the reported action was a translation to the right
 				if cur_action in ["Right","R"]:
 					# if in an inner column
-					if x>0 and x<self.num_cols-1:
+					if x>0 and x<=self.num_cols-1:
 						# if the cell to the left is blocked (i.e. we couldn't have come from left)
-						if condition_matrix[y][x-1].value=="B": transition_matrix[y][x].value *= 0.1
+						if condition_matrix[y][x-1].value=="B":
+							ancestor_row.append([x,y])
+							#transition_matrix[y][x].value *= 0.1
+							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.1
+							transition_matrix[y][x].value *= 0.1
 						# we could have legally made the reported move
-						else: 							  		transition_matrix[y][x].value *= 0.9
+						else:
+							ancestor_row.append([x-1,y])
+							#transition_matrix[y][x].value *= 0.9
+							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.9
+							transition_matrix[y][x].value *= 0.9
+							#if prior_transition_matrix!=None:
+							#	prior
 
 					# if in the left column
 					if x==0:
 						# if a right translation could be prevented due to a blocked cell to the right
-						if condition_matrix[y][x+1].value=="B": transition_matrix[y][x].value *= 0.9
+						if condition_matrix[y][x+1].value=="B":
+							ancestor_row.append([x,y])
+							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.9
+							transition_matrix[y][x].value *= 0.9
 						# only could be here if the reported action was not actually performed
-						else: 							  		transition_matrix[y][x].value *= 0.1
+						else:
+							ancestor_row.append([x,y])
+							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.1
+							transition_matrix[y][x].value *= 0.1
 
 				# if the reported action was a translation to the left
 				if cur_action in ["Left","L"]:
 					# if in an inner column
-					if x>0 and x<self.num_cols-1:
+					if x>=0 and x<self.num_cols-1:
 						# if the right cell is blocked (i.e. we couldn't have come from right)
-						if condition_matrix[y][x+1].value=="B": transition_matrix[y][x].value *= 0.1
+						if condition_matrix[y][x+1].value=="B":
+							ancestor_row.append([x,y])
+							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.1
+							transition_matrix[y][x].value *= 0.1
 						# we could have legally made the reported move
-						else: 							  		transition_matrix[y][x].value *= 0.9
+						else:
+							ancestor_row.append([x+1,y])
+							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.9
+							transition_matrix[y][x].value *= 0.9
 
 					# if in the right column
 					if x==self.num_cols-1:
 						# if a left translation could be prevented due to a blocked cell to the left
-						if condition_matrix[y][x-1].value=="B": transition_matrix[y][x].value *= 0.9
+						if condition_matrix[y][x-1].value=="B":
+							ancestor_row.append([x,y])
+							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.9
+							transition_matrix[y][x].value *= 0.9
 						# only here if the reported action was not actually performed
-						else: 							  		transition_matrix[y][x].value *= 0.1
+						else:
+							ancestor_row.append([x,y])
+							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.1
+							transition_matrix[y][x].value *= 0.1
 
 				# if the reported action was a translation up
 				if cur_action in ["Up","U"]:
 					# if in an inner row
-					if y>0 and y<self.num_rows-1:
-						if condition_matrix[y+1][x].value=="B": transition_matrix[y][x].value *= 0.1
-						else: 									transition_matrix[y][x].value *= 0.9
+					if y>=0 and y<self.num_rows-1:
+						if condition_matrix[y+1][x].value=="B":
+							ancestor_row.append([x,y])
+							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.1
+							transition_matrix[y][x].value *= 0.1
+						else:
+							ancestor_row.append([x,y+1])
+							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.9
+							transition_matrix[y][x].value *= 0.9
 
 					# if in the bottom row
 					if y==self.num_rows-1:
-						if condition_matrix[y-1][x].value=="B": transition_matrix[y][x].value *= 0.9
-						else: 							  		transition_matrix[y][x].value *= 0.1
+						if condition_matrix[y-1][x].value=="B":
+							ancestor_row.append([x,y])
+							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.9
+							transition_matrix[y][x].value *= 0.9
+						else:
+							ancestor_row.append([x,y])
+							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.1
+							transition_matrix[y][x].value *= 0.1
 
 				# if the reported action was a translation down
 				if cur_action in ["Down","D"]:
 					# if in an inner row
-					if y>0 and y<self.num_rows-1:
-						if condition_matrix[y-1][x].value=="B": transition_matrix[y][x].value *= 0.1
-						else: 									transition_matrix[y][x].value *= 0.9
+					if y>0 and y<=self.num_rows-1:
+						if condition_matrix[y-1][x].value=="B":
+							ancestor_row.append([x,y])
+							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.1
+							transition_matrix[y][x].value *= 0.1
+						else:
+							ancestor_row.append([x,y-1])
+							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.9
+							transition_matrix[y][x].value *= 0.9
+
 
 					# if in the top row
 					if y==0:
-						if condition_matrix[y+1][x].value=="B": transition_matrix[y][x].value *= 0.9
-						else:							  		transition_matrix[y][x].value *= 0.1
+						if condition_matrix[y+1][x].value=="B":
+							ancestor_row.append([x,y])
+							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.9
+							transition_matrix[y][x].value *= 0.9
+						else:
+							ancestor_row.append([x,y])
+							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.1
+							transition_matrix[y][x].value *= 0.1
+
+			ancestors.append(ancestor_row)
+
+		#print("\n transition_matrix... (before normalization)")
+		#self.print_matrix(transition_matrix,10)
+
+		temp_anc_matrix = []
+		for y in range(self.num_rows):
+			row = []
+			for x in range(self.num_cols):
+				new_node = viterbi_node()
+				new_node.value = "("+str(ancestors[y][x][0])+","+str(ancestors[y][x][1])+")"
+				row.append(new_node)
+			temp_anc_matrix.append(row)
+		#print("\nAncestors Matrix: ")
+		self.temp_anc_matrix = temp_anc_matrix
+		#self.print_matrix(temp_anc_matrix,6)
 
 		# NEW: normalizing the transition_matrix (effectively the emission matrix for current step)
 		transition_matrix = self.normalize_matrix(transition_matrix)
 
 		# add new transition matrix to list of prior transition matrices
-		self.transition_matrices.append(copy(transition_matrix))
+		self.transition_matrices.append(deepcopy(transition_matrix))
 
 		# create new prediction matrix by multiplying each element of the newly created transition matrix
 		# by the element in the same location of the prior prediction matrix
-		new_pred_matrix = self.resolve_prediction_matrix(transition_matrix,old_pred_matrix)
+		new_pred_matrix = self.resolve_prediction_matrix(transition_matrix,old_pred_matrix,ancestors)
 
 		# normalize the new prediction matrix
-		new_pred_matrix = deepcopy(self.normalize_matrix(new_pred_matrix))
+		new_pred_matrix = self.normalize_matrix(new_pred_matrix)
+		#new_pred_matrix = deepcopy(new_pred_matrix)
 
+		'''
 		# point each element of the new prediction matrix to it's ancestor in the prior prediction matrix
 		if len(self.prediction_matrices)==0:
 			for y in range(self.num_rows):
@@ -440,21 +520,41 @@ class viterbi_matrix:
 				for x in range(self.num_cols):
 					new_pred_matrix[y][x].parent = self.prediction_matrices[-1][y][x]
 					new_pred_matrix[y][x].transition_prob = transition_matrix[y][x].value
+		'''
 
 		# add new prediction matrix to list
 		self.prediction_matrices.append(new_pred_matrix)
 
 	# creates a new matrix provided a prior prediction matrix and a transition matrix
-	def resolve_prediction_matrix(self,transition_matrix,old_pred_matrix):
-		new_pred_matrix = []
-		for y in range(self.num_rows):
-			row = []
-			for x in range(self.num_cols):
-				new_node = viterbi_node()
-				new_node.value = float(transition_matrix[y][x].value)*float(old_pred_matrix[y][x].value)
-				row.append(new_node)
-			new_pred_matrix.append(row)
-		return new_pred_matrix
+	def resolve_prediction_matrix(self,transition_matrix,old_pred_matrix,ancestors=None):
+		if ancestors==None:
+			new_pred_matrix = []
+			for y in range(self.num_rows):
+				row = []
+				for x in range(self.num_cols):
+					new_node = viterbi_node()
+					new_node.coords = [x,y]
+					new_node.value = float(transition_matrix[y][x].value)*float(old_pred_matrix[y][x].value)
+					new_node.parent = None
+					row.append(new_node)
+				new_pred_matrix.append(row)
+			return new_pred_matrix
+		else:
+			new_pred_matrix = []
+			for y in range(self.num_rows):
+				row = []
+				for x in range(self.num_cols):
+					anc_x,anc_y = ancestors[y][x]
+
+					new_node = viterbi_node()
+					new_node.coords = [x,y]
+					new_node.parent = deepcopy(old_pred_matrix[anc_y][anc_x])
+					anc_prob = new_node.parent.value
+					#anc_prob = float(old_pred_matrix[anc_y][anc_x].value)
+					new_node.value = float(transition_matrix[y][x].value)*anc_prob
+					row.append(new_node)
+				new_pred_matrix.append(row)
+			return new_pred_matrix
 
 	# returns the sum of all elements in input matrix
 	def get_matrix_sum(self,matrix):
@@ -570,6 +670,25 @@ class viterbi_matrix:
 	def get_predicted_sequence(self):
 
 		#print("Inside get_predicted_sequence")
+
+		last_location, last_probability = self.predict_location(self.prediction_matrices[-1])
+
+		best_path = []
+		best_path.append(last_location)
+
+		last_location = self.prediction_matrices[-1][last_location[1]][last_location[0]]
+
+		path_prob = last_probability
+
+		while True:
+			last_location = last_location.parent
+			if last_location == None: break
+			new_coords = last_location.coords
+			best_path.insert(0,new_coords)
+
+		return [best_path,[path_prob]]
+
+
 
 		pred_matrices = self.prediction_matrices[1:]
 		cur_action = self.cur_action
@@ -786,11 +905,11 @@ class viterbi_matrix:
 	# prints a copy of the conditions_matrix with the provided sequence overlaid
 	def print_single_sequence(self,sequence,print_seq=True):
 
-		'''
+
 		if print_seq:
 			sys.stdout.write("  "+" ".join("["+str(a)+","+str(b)+"]" for [a,b] in sequence))
 			sys.stdout.write("\n\n")
-		'''
+
 
 		sys.stdout.write("\n")
 
@@ -1016,6 +1135,10 @@ class viterbi_matrix:
 		if len(self.transition_matrices)!=0 and self.print_transition:
 			sys.stdout.write("\n Transition Matrix:\n")
 			self.print_matrix(self.transition_matrices[-1],desired_item_size)
+
+		if self.temp_anc_matrix is not None:
+			print("\nAncestors Matrix: ")
+			self.print_matrix(self.temp_anc_matrix,8)
 
 		if pred_matrix is not None and not self.show_all:
 			sys.stdout.write("\n\n Current Probability Matrix:\n")
