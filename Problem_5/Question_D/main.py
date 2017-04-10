@@ -85,7 +85,9 @@ def exit_handler(signum,frame):
 	print("\nExiting...")
 	sys.exit(0)
 
-def create_png(src_tsv,targ_png,actual_location):
+def create_png(src_tsv,targ_png,trav_so_far):
+	#print(src_tsv+" "+targ_png+" ",trav_so_far)
+	actual_location = trav_so_far[-1]
 	zs = []
 	smallest_z = 10
 
@@ -125,11 +127,21 @@ def create_png(src_tsv,targ_png,actual_location):
 	ax.xaxis.set_label_position('top')
 	ax.xaxis.tick_top()
 
-	ax.annotate('Actual Location',xy=(actual_location[0]+0.5,actual_location[1]+0.8),xytext=(1,2),
-				arrowprops=dict(facecolor='white',shrink=0.05), color='white')
+	ax.annotate('Actual Location',xy=(actual_location[0],actual_location[1]),xytext=(1,5),
+				arrowprops=dict(arrowstyle="-|>"), color='white') #ha="right",va="center")   #facecolor='white',shrink=0.01), color='white')
 
 	cax = ax.imshow(Z,cmap='plasma',norm=colors.LogNorm(vmin=smallest_scaled_z, vmax=1.0))
-	#cax = ax.imshow(Z,cmap='plasma')
+
+	trav_xs = []
+	trav_ys = []
+	for s in trav_so_far:
+		trav_xs.append(s[0])
+		trav_ys.append(s[1])
+	ax.plot(trav_xs,trav_ys,lw=2,c='black')
+	#for snip in trav_so_far:
+	#	ax.imshow(snip,lw=2,c='black')
+	#ax.plot(trav_so_far,lw=2,c='black')
+
 	cbar = fig.colorbar(cax, ticks=[smallest_scaled_z,Z.max()])
 	cbar.ax.set_yticklabels(['0.0',str(Z.max())[:7]])
 
@@ -155,17 +167,73 @@ def get_traversal_sequence(src_txt):
 					return seq
 	return seq
 
-def main():
+def get_most_recent_data_dir():
+	items = os.listdir(".")
 
-	gen_gifs = True
-	if gen_gifs:
+	most_recent_name = None
+	most_recent_secs = 0
+
+	for item in items:
+		if os.path.isdir(item):
+			if item.find("exec_data")!=-1:
+				secs = int(item.split("-")[1])
+				if secs>most_recent_secs:
+					most_recent_secs = secs
+					most_recent_name = item
+
+	if most_recent_name==None:
+		print("ERROR: Must first generate data, none found.")
+	return most_recent_name
+
+
+def main():
+	# generate execution data given data in Question_C folder
+	regenerate_data = False
+	if regenerate_data:
+		start_time = time.time()
+		src_dir = "../Question_C/data/"
+		runtime_code = str(int(time.time()))
+
+		num_grid_files = 10
+		traversals_per_file = 10
+		grid_width = 100
+		grid_height = 100
+		overall_total_score = 0
+
+		for grid_idx in range(num_grid_files):
+			map_dir = src_dir+"map_"+str(grid_idx)+"/"
+			tsv = map_dir+"grid_"+str(grid_idx)+".tsv"
+			v = viterbi_matrix(load_path=tsv)
+			total_score = 0
+
+			for trav_idx in range(traversals_per_file):
+				trav_file = map_dir+"traversal_"+str(trav_idx)+".txt"
+				save_dir = "exec_data-"+runtime_code+"/map_"+str(grid_idx)+"/traversal_"+str(trav_idx)
+				total_score += v.load_observations(trav_file,grid_width=grid_width,grid_height=grid_height,path=True,save_dir=save_dir,print_nothing=True)
+				if trav_idx!=traversals_per_file-1: v.reload_conditions_matrix() # reset weights / bounds
+
+			data_file = open("exec_data-"+runtime_code+"/map_"+str(grid_idx)+"/meta.txt","w")
+			data_file.write("Total Score: "+str(total_score)+"\n")
+			data_file.write("Grid Width: "+str(grid_width)+"\n")
+			data_file.write("Grid Height: "+str(grid_height)+"\n")
+			data_file.close()
+			overall_total_score+=total_score
+
+		end_time = time.time()
+		print("\nDone. Total time: "+str(end_time-start_time)[:7]+" seconds")
+		print("Overall total score: "+str(overall_total_score))
+
+
+	generate_pngs_and_gifs = True
+	# generate gifs and pngs for the data
+	if generate_pngs_and_gifs:
 
 		num_png = 0
 		num_gif = 0
 
 		sys.stdout.write("Generating .png and .gif files... ")
 		sys.stdout.flush()
-		src = "exec_data-1491791539-(complete)/"
+		src = get_most_recent_data_dir()+"/"
 		map_dirs = os.listdir(src)
 		for m in map_dirs:
 			if os.path.isdir(src+m):
@@ -189,8 +257,10 @@ def main():
 						for d in data_files:
 							if d.find("prediction-floats")!=-1:
 								idx = d.split(".")[0].split("-")[2]
-								actual_loc = actual_traversal_sequence[int(idx)-1]
-								create_png(src+m+"/"+t+"/"+d,src+m+"/"+t+"/"+"prediction-heatmap-"+idx+".png",actual_loc)
+								#actual_loc = actual_traversal_sequence[int(idx)-1]
+								trav_so_far = actual_traversal_sequence[:int(idx)]
+								#create_png(src+m+"/"+t+"/"+d,src+m+"/"+t+"/"+"prediction-heatmap-"+idx+".png",actual_loc)
+								create_png(src+m+"/"+t+"/"+d,src+m+"/"+t+"/"+"prediction-heatmap-"+idx+".png",trav_so_far)
 								num_png+=1
 								sys.stdout.write("\rGenerating .png and .gif files... GIF: "+str(num_gif)+", PNG: "+str(num_png)+"        ")
 								sys.stdout.flush()
@@ -203,38 +273,6 @@ def main():
 		sys.stdout.flush()
 		return
 
-	start_time = time.time()
-	src_dir = "../Question_C/data/"
-	runtime_code = str(int(time.time()))
-
-	num_grid_files = 10
-	traversals_per_file = 10
-	grid_width = 50
-	grid_height = 50
-	overall_total_score = 0
-
-	for grid_idx in range(num_grid_files):
-		map_dir = src_dir+"map_"+str(grid_idx)+"/"
-		tsv = map_dir+"grid_"+str(grid_idx)+".tsv"
-		v = viterbi_matrix(load_path=tsv)
-		total_score = 0
-
-		for trav_idx in range(traversals_per_file):
-			trav_file = map_dir+"traversal_"+str(trav_idx)+".txt"
-			save_dir = "exec_data-"+runtime_code+"/map_"+str(grid_idx)+"/traversal_"+str(trav_idx)
-			total_score += v.load_observations(trav_file,grid_width=grid_width,grid_height=grid_height,path=True,save_dir=save_dir,print_nothing=True)
-			if trav_idx!=traversals_per_file-1: v.reload_conditions_matrix() # reset weights / bounds
-
-		data_file = open("exec_data-"+runtime_code+"/map_"+str(grid_idx)+"/meta.txt","w")
-		data_file.write("Total Score: "+str(total_score)+"\n")
-		data_file.write("Grid Width: "+str(grid_width)+"\n")
-		data_file.write("Grid Height: "+str(grid_height)+"\n")
-		data_file.close()
-		overall_total_score+=total_score
-
-	end_time = time.time()
-	print("\nDone. Total time: "+str(end_time-start_time)[:7]+" seconds")
-	print("Overall total score: "+str(overall_total_score))
 	dir_name = "exec_data-"+runtime_code
 	os.rename(dir_name,dir_name+"-(complete)")
 

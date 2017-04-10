@@ -31,6 +31,9 @@ def get_overall_average_score(src_dir,targ_dir):
 	# overall averages written to this file
 	overall_avgs_file = open(targ_dir+"overall-avg_score.txt","w")
 
+	# file to hold all scores
+	all_scores_file = open(targ_dir+"all-scores.txt","w")
+
 	# totals for all trials on all grids
 	scores = [0] * 100
 
@@ -68,15 +71,22 @@ def get_overall_average_score(src_dir,targ_dir):
 				# the index of the current score
 				score_idx = 0
 
+				total_score = 0
+
 				# iterate over each line of meta.txt looking for path score
 				for l in lines:
 					if l.find("Predicted Path Score")!=-1:
 						val = int(l.split(",")[0].split(": ")[1])
+						total_score+= val
 						scores[score_idx] += val
 						score_idx += 1
 
+				all_scores_file.write(m+" - "+c+" - score: \t"+str(total_score)+"\n")
+
 				# close the meta.txt file
 				meta_f.close()
+
+	all_scores_file.close()
 
 	sys.stdout.write("writing file... ")
 	sys.stdout.flush()
@@ -227,16 +237,20 @@ def get_overall_correctness_probability(src_dir,targ_dir):
 	# return the list of averages
 	return average_scores
 
+#def get_average_score_by_map(src_dir):
+
 
 def main():
-	src_dir = "../Question_D/exec_data-1491732072-(complete)/"
+	src_dir = "../Question_D/exec_data-1491791539-(complete)/"
 	targ_dir = "cleaned_data/"
 
 	# get and plot overall average scores at each iteration (all maps/traversals)
-	#avgs = get_overall_average_score(src_dir,targ_dir)
+	avgs = get_overall_average_score(src_dir,targ_dir)
 
 	# get and plot overall average probability of correct prediction at each iteration (all maps/travs)
 	probs = get_overall_correctness_probability(src_dir,targ_dir)
+
+	# get the average score
 
 if __name__ == '__main__':
 	main()
