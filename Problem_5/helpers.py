@@ -7,11 +7,73 @@ from shutil import rmtree
 from math import log10,log1p
 
 import numpy as np
+
+import matplotlib
+matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 from matplotlib import cm
 from matplotlib import mlab as ml
 from matplotlib import colors
 
+import threading
+
+map_name = ""
+traversal_name = ""
+save_base = ""
+png_managers = []
+started_png_managers = 0
+
+# runs in separate thread, handles writing the png files
+def png_manager(scaled_zs,iteration,actual_location,smallest_scaled_z,traversal_name):
+	global started_png_managers
+	started_png_managers+=1
+
+	sys.stdout.write("\rpng_manager ("+str(map_name)+" - "+str(traversal_name)+" - "+str(iteration)+") online.                                                                \n")
+	sys.stdout.flush()
+
+	Z = np.array(scaled_zs)
+
+	fig,ax = plt.subplots()
+	fig.suptitle(map_name+" - "+traversal_name+" - ("+str(iteration)+")",fontsize=12,y=1.02)
+
+	ax.set_xlabel("X Coordinate")
+	ax.set_ylabel("Y Coordinate")
+
+	ax.xaxis.set_label_position('top')
+	ax.xaxis.tick_top()
+
+	ax.annotate('Actual Location',xy=(actual_location[0],actual_location[1]+1),xytext=(1,1),
+				arrowprops=dict(facecolor='white',shrink=0.05), color='white')
+
+	cax = ax.imshow(Z,cmap='plasma',norm=colors.LogNorm(vmin=smallest_scaled_z, vmax=1.0))
+	#cax = ax.imshow(Z,cmap='plasma')
+	cbar = fig.colorbar(cax, ticks=[smallest_scaled_z,Z.max()])
+	cbar.ax.set_yticklabels(['0.0',str(Z.max())[:7]])
+
+	save_spot = save_base+"prediction-heatmap-"+str(iteration)+".png"
+	fig.savefig(save_spot,bbox_inches='tight',dpi=200)
+	plt.close()
+
+	started_png_managers-=1
+
+execution_done = False
+
+def thread_starter():
+	global started_png_managers
+	global png_managers
+
+	started_png_managers = 0
+	#while True:
+	#	if execution_done: return
+	for a in png_managers:
+		a.start()
+		#time.sleep(1.0)
+
+	while started_png_managers>0:
+		time.sleep(0.1)
+
+
+# get the bounding box of the input sequence
 def get_sequence_bounds(sequence):
 	y_max, x_max, x_min, y_min = None, None, None, None
 	for x,y in sequence:
@@ -36,6 +98,18 @@ class viterbi_node:
 
 class viterbi_matrix:
 	def __init__(self,num_rows=3,num_cols=3,values=["H","H","T","N","N","N","N","B","H"],load_path=None):
+		global png_managers
+		global started_png_managers
+		global execution_done
+
+		png_managers = []
+		started_png_managers = 0
+		execution_done = False
+
+		self.started_thread_manager = False
+		self.thread_manager = threading.Thread(target=thread_starter)
+		#self.thread_manager.start()
+
 		self.temp_anc_matrix = None # debugging
 		self.display_temp_ancestor_matrix = False
 
@@ -52,6 +126,13 @@ class viterbi_matrix:
 		else:
 			self.load_path = load_path
 			self.load_conditions_matrix()
+
+	def start_png_managers(self):
+		self.thread_manager.start()
+
+	def signal_exit(self):
+		global execution_done
+		execution_done = True
 
 	# loads a grid world matrix from a .tsv file
 	def load_conditions_matrix(self,print_all=True):
@@ -93,10 +174,17 @@ class viterbi_matrix:
 
 	# sets up directory for saving plot png's to
 	def init_plot_directory(self,save_dir):
+		global map_name
+		global traversal_name
+		global save_base
+
 		# check to ensure directory structure exists
 		path_items = save_dir.split("/")
 		self.map_name = path_items[1]
 		self.traversal_name = path_items[2]
+
+		map_name = path_items[1]
+		traversal_name = path_items[2]
 
 		if not os.path.exists(path_items[0]):
 			os.makedirs(path_items[0])
@@ -108,6 +196,7 @@ class viterbi_matrix:
 					rmtree(path_items[0]+"/"+path_items[1]+"/"+path_items[2])
 		os.makedirs(path_items[0]+"/"+path_items[1]+"/"+path_items[2])
 		self.save_base = save_dir+"/"
+		save_base = self.save_base
 
 	# loads in an observation file (.txt)
 	# if buffer_size=None then none of the original conditions_matrix will be trimmed, if
@@ -116,7 +205,7 @@ class viterbi_matrix:
 	# accordingly and trim the conditions_matrix down to said bounds (the conditions_matrices are
 	# originally 500x500 but the agent rarely makes if very far to justify that large of a search
 	# space) - see self.adjust_environment_bounds()
-	def load_observations(self,observation_path,grid_buffer_size=None,path=False,method="default",save_dir=None,print_nothing=True):
+	def load_observations(self,observation_path,grid_width=-1,grid_height=-1,path=False,method="default",save_dir=None,print_nothing=True):
 		if save_dir is not None:
 			self.init_plot_directory(save_dir) # if saving plot pictures
 		else:
@@ -170,7 +259,10 @@ class viterbi_matrix:
 		self.transition_matrices = []
 
 		# trim the environment down to a smaller area containing the real movement of the agent
-		if grid_buffer_size is not None: self.adjust_environment_bounds(grid_buffer_size)
+		if grid_width!=-1 and grid_height!=-1:
+			self.adjust_environment_bounds(grid_width,grid_height)
+
+		#if grid_buffer_size is not None: self.adjust_environment_bounds(grid_buffer_size)
 
 		self.init_prediction_matrix()
 
@@ -238,7 +330,7 @@ class viterbi_matrix:
 				#if i in [9,49,99]:
 				#if (i+1)%5==0:
 				#if i%2==1:
-				self.save_heatmap(i+1)
+				#self.save_heatmap(i+1)
 				self.save_prediction_matrix(i+1)
 
 				log_file.write("Iteration #"+str(i)+"\n")
@@ -282,6 +374,13 @@ class viterbi_matrix:
 			log_file.write("Total Time: "+str(time.time()-start_time)+"\n")
 			log_file.close()
 
+		#if save_dir is not None:
+		#	if not self.started_thread_manager:
+		#		self.thread_manager.start()
+		#		self.started_thread_manager = True
+		#	for mngr in self.png_managers:
+		#		mngr.start()
+
 		if path:
 			return total_score
 
@@ -313,11 +412,9 @@ class viterbi_matrix:
 
 	# save a png of the current prediction matrix in heat map form
 	def save_heatmap(self,iteration):
+
 		cur_pred_matrix = self.prediction_matrices[-1]
 		actual_location = self.actual_traversal_path[self.current_predicted_length-1]
-
-		X = np.arange(0,self.num_cols)
-		Y = np.arange(0,self.num_rows)
 
 		zs = []
 		smallest_z = 10
@@ -339,34 +436,14 @@ class viterbi_matrix:
 					val = smallest_z-(smallest_z/2.0)
 				else:
 					val = zs[y][x]
-
-				#logged_val = log1p(val)
 				logged_val = val
 				if logged_val<smallest_scaled_z: smallest_scaled_z = logged_val
 				row.append(logged_val)
 			scaled_zs.append(row)
-		Z = np.array(scaled_zs)
+		#Z = np.array(scaled_zs)
 
-		fig,ax = plt.subplots()
-		fig.suptitle(self.map_name+" - "+self.traversal_name+" - ("+str(iteration)+")",fontsize=12,y=1.02)
-
-		ax.set_xlabel("X Coordinate")
-		ax.set_ylabel("Y Coordinate")
-
-		ax.xaxis.set_label_position('top')
-		ax.xaxis.tick_top()
-
-		ax.annotate('Actual Location',xy=(actual_location[0],actual_location[1]),xytext=(0,0),
-					arrowprops=dict(facecolor='white',shrink=0.05), color='white')
-
-		cax = ax.imshow(Z,cmap='plasma',norm=colors.LogNorm(vmin=smallest_scaled_z, vmax=1.0))
-		#cax = ax.imshow(Z,cmap='plasma')
-		cbar = fig.colorbar(cax, ticks=[smallest_scaled_z,Z.max()])
-		cbar.ax.set_yticklabels(['0.0',str(Z.max())[:7]])
-
-		save_spot = self.save_base+"prediction-heatmap-"+str(iteration)+".png"
-		fig.savefig(save_spot,bbox_inches='tight',dpi=180)
-		plt.close()
+		png_creator = threading.Thread(target=png_manager,args=(copy(scaled_zs),copy(iteration),copy(actual_location),copy(smallest_scaled_z),copy(self.traversal_name)))
+		png_managers.append(png_creator)
 
 	# various methods for ensuring data validity
 	def check_validity(self):
@@ -378,25 +455,61 @@ class viterbi_matrix:
 
 	# given that the actual path taken by the agent rarely fills anywhere near the entire conditions_matrix
 	# we can choose to trim the conditions_matrix down to fit the range of the path taken
-	def adjust_environment_bounds(self,buffer_size=10):
-		#sys.stdout.write("Adjusting bounds... ")
+	def adjust_environment_bounds(self,grid_width,grid_height):
+
+		# get the bounding region for the actual traversal path in the grid world
 		x_max,y_max,x_min,y_min = get_sequence_bounds(self.actual_traversal_path)
 
-		preferred_x_max = x_max+buffer_size if (x_max+buffer_size)<self.num_cols else self.num_cols-1
-		preferred_y_max = y_max+buffer_size if (y_max+buffer_size)<self.num_rows else self.num_rows-1
-		preferred_x_min = x_min-buffer_size if (x_min-buffer_size)>=0 			 else 0
-		preferred_y_min = y_min-buffer_size if (y_min-buffer_size)>=0 			 else 0
+		# get the current path span
+		x_span = x_max-x_min
+		y_span = y_max-y_min
 
-		#sys.stdout.write("x_off: "+str(preferred_x_min)+", y_off: "+str(preferred_y_min)+" ")
+		if x_span>grid_width:
+			print("WARNING: Path wider than specified grid_width ("+str(grid_width)+")")
+			return
 
-		self.start_location = [self.start_location[0]-preferred_x_min,self.start_location[1]-preferred_y_min]
+		if y_span>grid_height:
+			print("WARNING: Path taller than specified grid_height ("+str(grid_height)+")")
+			return
 
-		self.translate_actual_path(-1*preferred_x_min,-1*preferred_y_min)
-		self.trim_conditions_matrix(preferred_x_max,preferred_y_max,preferred_x_min,preferred_y_min)
+		# calculate approx. buffer region widths
+		x_buf = int((grid_width-x_span)/2)
+		y_buf = int((grid_height-y_span)/2)
 
-		self.num_rows = preferred_y_max-preferred_y_min+1
-		self.num_cols = preferred_x_max-preferred_x_min+1
-		#sys.stdout.write("rows: "+str(self.num_rows)+", cols: "+str(self.num_cols)+"\n")
+		# add buffer regions to real bounds
+		x_max += x_buf
+		x_min -= x_buf
+		y_max += y_buf
+		y_min -= y_buf
+
+		# calculate new spans after buffers are added
+		new_x_span = x_max-x_min+1
+		new_y_span = y_max-y_min+1
+
+		# correct rounding errors on the /2 division
+		while new_x_span!=grid_width:
+			if new_x_span<grid_width: x_max+=1
+			if new_x_span>grid_width: x_max-=1
+			new_x_span = x_max-x_min+1
+		while new_y_span!=grid_height:
+			if new_y_span<grid_height: y_max+=1
+			if new_y_span>grid_height: y_max-=1
+			new_y_span = y_max-y_min+1
+
+		# translate the start_location coordinate
+		self.start_location = [self.start_location[0]-x_min,self.start_location[1]-y_min]
+
+		# translate the actual traversal path to fit new region
+		self.translate_actual_path(-1*x_min,-1*y_min)
+
+		# trim down the size of the conditions matrix to fit new region
+		self.trim_conditions_matrix(x_max,y_max,x_min,y_min)
+
+		# set values for number of rows and columns
+		self.num_rows, self.num_cols = grid_height, grid_width
+
+		#print("\nLength of conditions matrix = "+str(len(self.conditions_matrix)))
+		#print("Width of conditions matrix = "+str(len(self.conditions_matrix[0])))
 
 	# translates the coordinates of the actual traversal path
 	def translate_actual_path(self,x_offset,y_offset):
@@ -661,7 +774,8 @@ class viterbi_matrix:
 		transition_matrix = self.normalize_matrix(transition_matrix)
 
 		# add new transition matrix to list of prior transition matrices
-		self.transition_matrices.append(deepcopy(transition_matrix))
+		#self.transition_matrices.append(deepcopy(transition_matrix))
+		self.transition_matrices.append(transition_matrix)
 
 		# create new prediction matrix by multiplying each element of the newly created transition matrix
 		# by the element in the same location of the prior prediction matrix
@@ -696,7 +810,8 @@ class viterbi_matrix:
 
 					new_node = viterbi_node()
 					new_node.coords = [x,y]
-					new_node.parent = deepcopy(old_pred_matrix[anc_y][anc_x])
+					#new_node.parent = deepcopy(old_pred_matrix[anc_y][anc_x])
+					new_node.parent = old_pred_matrix[anc_y][anc_x]
 					anc_prob = new_node.parent.value
 					#anc_prob = float(old_pred_matrix[anc_y][anc_x].value)
 					new_node.value = float(transition_matrix[y][x].value)*anc_prob
@@ -816,7 +931,6 @@ class viterbi_matrix:
 	#
 	# return: [[x,y],...] list of predicted locations back to starting spot
 	def get_predicted_sequence(self,score=False):
-		#print("Inside get_predicted_sequence")
 
 		last_location, last_probability = self.predict_location(self.prediction_matrices[-1])
 		predicted_last_location = copy(last_location)
