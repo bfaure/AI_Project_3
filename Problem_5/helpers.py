@@ -96,6 +96,9 @@ class viterbi_node:
 		self.best_path = None
 		self.best_path_cost = None
 
+		self.parents 	  = []
+		self.parent_costs = []
+
 class viterbi_matrix:
 	def __init__(self,num_rows=3,num_cols=3,values=["H","H","T","N","N","N","N","B","H"],load_path=None):
 		global png_managers
@@ -343,6 +346,12 @@ class viterbi_matrix:
 					log_file.write("Predicted Path Length: "+str(len(pred_seq))+"\n")
 					log_file.write("Predicted Path Score: "+str(score)+", Total Score: "+str(total_score)+"\n")
 
+					p_x,p_y = pred_seq[-1]
+					a_x,a_y = self.actual_traversal_path[len(pred_seq)-1]
+
+					log_file.write("Predicted Current Location: ("+str(p_x)+","+str(p_y)+")\n")
+					log_file.write("Actual Current Location: ("+str(a_x)+","+str(a_y)+")\n")
+
 				log_file.write("...\n")
 
 			i+=1
@@ -548,6 +557,7 @@ class viterbi_matrix:
 	def init_prediction_matrix(self,start_location=None):
 		if start_location==None:
 			init_probability = 1.0/float(self.num_rows*self.num_cols-self.get_num_blocked_cells())
+			self.init_probability = init_probability
 			self.prediction_matrices = []
 			cells = []
 			for y in range(self.num_rows):
@@ -588,7 +598,7 @@ class viterbi_matrix:
 			row = []
 			for x in range(self.num_cols):
 				new_node = viterbi_node()
-				new_node.value = 0.0
+				new_node.value = self.init_probability if self.conditions_matrix[y][x].value!="B" else 0.0
 				new_node.parent = None
 				new_node.coords = [x,y]
 				row.append(new_node)
@@ -616,6 +626,7 @@ class viterbi_matrix:
 		transition_matrix 	= self.empty_prediction_matrix() # create new matrix
 		condition_matrix 	= self.conditions_matrix # matrix holding cell conditions
 
+		'''
 		# set probabilities given the reported reading compared to state values
 		#
 		# iterate over all possible current locations
@@ -640,7 +651,118 @@ class viterbi_matrix:
 			prior_transition_matrix = None
 
 		ancestors = []
+		'''
 
+		# iterate over all x,y in matrix and set values for new transition matrix
+		for y in range(self.num_rows):
+			for x in range(self.num_cols):
+				if condition_matrix[y][x].value=="B":
+					transition_matrix[y][x].value==0.0
+				else:
+					transition_matrix[y][x].parents = []
+					transition_matrix[y][x].parent_costs = []
+
+					up_prob = None
+					down_prob = None
+					left_prob = None
+					right_prob = None
+
+					# get all possible neighbors
+					ns = self.get_neighbors([x,y])
+
+					# value of this cell from last iteration
+					my_prior_val = copy(old_pred_matrix[y][x].value)
+
+					highest_anc_prob = 0.0
+					total_anc_prob = 0.0
+
+					# get the probabilities of having descended from any of the possible neighbors
+					for n_x,n_y in ns:
+						if condition_matrix[n_y][n_x].value=="B": continue
+						#if condition_matrix[n_y][n_x].value=="B":
+						#	if
+						#	self_ancestor_prob = 0.9
+						#	continue
+
+						anc = old_pred_matrix[n_y][n_x]
+						anc_prior_prob = copy(anc.value)
+
+						anc_cost = 0.0
+						anc_cost = anc_prior_prob
+						#anc_prob = None
+
+						#transition_matrix[y][x].parent_costs.append(anc_cost)
+
+						# cell above current cell
+						if n_x==x and n_y==y-1:
+							# if action was down
+							if cur_action in ["Down","D"]:
+								anc_cost *= 0.9
+							else:
+								anc_cost *= 0.1
+
+						# cell below current cell
+						if n_x==x and n_y==y+1:
+							if cur_action in ["Up","U"]:
+								anc_cost *= 0.9
+							else:
+								anc_cost *= 0.1
+
+						# cell left of current cell
+						if n_x==x-1 and n_y==y:
+							# if the action was right
+							if cur_action in ["Right","R"]:
+								anc_cost *= 0.9
+							else:
+								anc_cost *= 0.1
+
+						# cell right of current cell
+						if n_x==x+1 and n_y==y:
+							# if the action was left
+							if cur_action in ["Left","L"]:
+								anc_cost *= 0.9
+							else:
+								anc_cost *= 0.1
+
+						# if the probability of this ancestor is >0
+						#if anc_prob is not None:
+
+						#anc_total_cost = anc_cost*anc_prior_prob
+
+						# add cost of having transitioned from this possible ancestor
+						total_anc_prob+=anc_cost
+						if anc_cost>highest_anc_prob:
+							transition_matrix[y][x].parent = anc
+							highest_anc_prob = anc_cost
+
+						transition_matrix[y][x].parent_costs.append(anc_cost*anc_prior_prob)
+						transition_matrix[y][x].parents.append(anc)
+
+					# if on a boundary
+					#if len(ns)<8:
+					#	adjoining_boundaries = self.get_adjoining_boundaries(x,y)
+
+					#	if cur_action in adjoining_boundaries:
+
+
+					#my_prior_prob = my_prior_val*0.1
+
+					my_prior_val *= 0.1 if condition_matrix[y][x].value==cur_reading else 0.0
+					if my_prior_val>highest_anc_prob: transition_matrix[y][x].parent = old_pred_matrix[y][x]
+
+					# add the current location to the list of possible ancestors
+					transition_matrix[y][x].parents.append(old_pred_matrix[y][x])
+					transition_matrix[y][x].parent_costs.append(my_prior_val)
+					total_anc_prob+=my_prior_val
+
+					# probability of being in this spot given the reported reading
+					this_spot_prob = 0.9 if condition_matrix[y][x].value==cur_reading else 0.1
+
+					# set the probability of being at this spot
+					#transition_matrix[y][x].value = total_anc_prob*this_spot_prob
+					transition_matrix[y][x].value = this_spot_prob * total_anc_prob
+
+		"""
 		# set probabilities given the reported movement (cur_action) compared to condition neighbors
 		#
 		# iterate over all possible current locations
@@ -648,6 +770,7 @@ class viterbi_matrix:
 			ancestor_row = []
 
 			for x in range(self.num_cols):
+				anc_set = []
 
 				# if the reported action was a translation to the right
 				if cur_action in ["Right","R"]:
@@ -758,6 +881,8 @@ class viterbi_matrix:
 							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.1
 							transition_matrix[y][x].value *= 0.1
 
+				ancestor_row.append(anc_set)
+
 			ancestors.append(ancestor_row)
 
 		temp_anc_matrix = []
@@ -769,23 +894,28 @@ class viterbi_matrix:
 				row.append(new_node)
 			temp_anc_matrix.append(row)
 		self.temp_anc_matrix = temp_anc_matrix
+		"""
 
 		# NEW: normalizing the transition_matrix (effectively the emission matrix for current step)
-		transition_matrix = self.normalize_matrix(transition_matrix)
+		#transition_matrix = self.normalize_matrix(transition_matrix)
 
 		# add new transition matrix to list of prior transition matrices
 		#self.transition_matrices.append(deepcopy(transition_matrix))
-		self.transition_matrices.append(transition_matrix)
+		#self.transition_matrices.append(transition_matrix)
 
 		# create new prediction matrix by multiplying each element of the newly created transition matrix
 		# by the element in the same location of the prior prediction matrix
-		new_pred_matrix = self.resolve_prediction_matrix(transition_matrix,old_pred_matrix,ancestors)
+		#new_pred_matrix = self.resolve_prediction_matrix(transition_matrix,old_pred_matrix,ancestors)
 
 		# normalize the new prediction matrix
-		new_pred_matrix = self.normalize_matrix(new_pred_matrix)
+		#new_pred_matrix = self.normalize_matrix(new_pred_matrix)
+		#new_pred_matrix = transition_matrix
 
 		# add new prediction matrix to list
-		self.prediction_matrices.append(new_pred_matrix)
+		#self.prediction_matrices.append(new_pred_matrix)
+
+		transition_matrix = self.normalize_matrix(transition_matrix)
+		self.prediction_matrices.append(transition_matrix)
 
 	# creates a new matrix provided a prior prediction matrix and a transition matrix
 	def resolve_prediction_matrix(self,transition_matrix,old_pred_matrix,ancestors=None):
@@ -855,7 +985,7 @@ class viterbi_matrix:
 			self.print_matrix(self.conditions_matrix,3)
 
 		self.move_index = 1
-		#self.print_current_state(6)
+		self.print_current_state(6)
 
 		for self.cur_action,self.cur_reading in zip(seen_actions,seen_readings):
 
@@ -949,8 +1079,8 @@ class viterbi_matrix:
 			best_path.insert(0,new_coords)
 
 		if score:
-			actual_last_location = self.actual_traversal_path[len(best_path)-2]
-			score = abs(predicted_last_location[0]-actual_last_location[0])+abs(predicted_last_location[1]-actual_last_location[1])
+			a_x,a_y = self.actual_traversal_path[len(best_path)-2]
+			score = abs(predicted_last_location[0]-a_x)+abs(predicted_last_location[1]-a_y)
 			return [best_path[1:],[path_prob],score]
 		return [best_path[1:],[path_prob]]
 

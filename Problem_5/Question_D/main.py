@@ -137,7 +137,7 @@ def create_png(src_tsv,targ_png,trav_so_far):
 	for s in trav_so_far:
 		trav_xs.append(s[0])
 		trav_ys.append(s[1])
-	ax.plot(trav_xs,trav_ys,lw=2,c='black')
+	ax.plot(trav_xs,trav_ys,lw=1,c='black')
 	#for snip in trav_so_far:
 	#	ax.imshow(snip,lw=2,c='black')
 	#ax.plot(trav_so_far,lw=2,c='black')
@@ -188,16 +188,16 @@ def get_most_recent_data_dir():
 
 def main():
 	# generate execution data given data in Question_C folder
-	regenerate_data = False
+	regenerate_data = True
 	if regenerate_data:
 		start_time = time.time()
 		src_dir = "../Question_C/data/"
 		runtime_code = str(int(time.time()))
 
-		num_grid_files = 10
+		num_grid_files = 1
 		traversals_per_file = 10
-		grid_width = 100
-		grid_height = 100
+		grid_width = 15
+		grid_height = 15
 		overall_total_score = 0
 
 		for grid_idx in range(num_grid_files):
