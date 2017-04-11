@@ -239,7 +239,6 @@ def main():
 		map_dirs = os.listdir(src)
 		for m in map_dirs:
 			if os.path.isdir(src+m):
-				cur_cond_matrix = None
 				trav_dirs 	    = os.listdir(src+m)
 				for t in trav_dirs:
 					if os.path.isdir(src+m+"/"+t):
@@ -251,7 +250,7 @@ def main():
 						for d in data_files:
 							if d.find("actual_traversal_sequence")!=-1:
 								actual_traversal_sequence = get_traversal_sequence(src+m+"/"+t+"/"+d)
-								if cur_cond_matrix is None: cur_cond_matrix = resurrect_condition_matrix(src+m+"/"+t+"/"+d)
+								cur_cond_matrix 		  = resurrect_condition_matrix(src+m+"/"+t+"/"+d)
 								break
 
 						# create pngs for the 10 most likely sequences (taken at 10, 50, 100 iterations)
