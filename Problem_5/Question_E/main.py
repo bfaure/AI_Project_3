@@ -3,6 +3,8 @@ import time
 import random
 import os
 
+import shutil, filecmp
+
 from shutil import rmtree
 from copy import deepcopy, copy
 
@@ -12,6 +14,7 @@ from matplotlib import mlab as ml
 from matplotlib import colors
 
 import numpy as np
+
 
 def get_overall_average_score(src_dir,targ_dir):
 	sys.stdout.write("\nCalculating average scores... ")
@@ -243,7 +246,6 @@ def get_overall_correctness_probability(src_dir,targ_dir):
 	# return the list of averages
 	return average_scores
 
-
 def get_most_recent_data_dir(parent_dir):
 	items = os.listdir(parent_dir)
 	most_recent_name = None
@@ -258,18 +260,48 @@ def get_most_recent_data_dir(parent_dir):
 		print("ERROR: Must first generate data, none found.")
 	return most_recent_name
 
+def organize_all_by_type(src_dir,targ_dir,ext=".gif"):
+	if src_dir[-1]!="/": src_dir+="/" 
+	if targ_dir[-1]!="/": targ_dir+="/"
+
+	if not os.path.exists(targ_dir): os.makedirs(targ_dir)
+	map_dirs = os.listdir(src_dir)
+	for m_d in map_dirs:
+		if os.path.isdir(src_dir+m_d):
+			trav_dirs = os.listdir(src_dir+m_d)
+			for t_d in trav_dirs:
+				data_files = os.listdir(src_dir+m_d+"/"+t_d)
+				for d in data_files:
+					if d.find(ext)!=-1:
+						shutil.copyfile(src_dir+m_d+"/"+t_d+"/"+d,targ_dir+d)
+
+
+
+	if os.path.exists("helpers.pyx"):
+		if filecmp.cmp("../helpers.py","helpers.pyx")==False: # if they are not the same already
+			shutil.copyfile("../helpers.py","helpers.pyx")
+	else:
+		shutil.copyfile("../helpers.py","helpers.pyx")
+
+
 def main():
+
 	parent_dir = "../Question_D"
 	src_dir = parent_dir+"/"+get_most_recent_data_dir(parent_dir)
 	targ_dir = "cleaned_data/"
 
-	# get and plot overall average scores at each iteration (all maps/traversals)
-	avgs = get_overall_average_score(src_dir,targ_dir)
+	plots = True 
+	if plots:
+		# get and plot overall average scores at each iteration (all maps/traversals)
+		avgs = get_overall_average_score(src_dir,targ_dir)
 
-	# get and plot overall average probability of correct prediction at each iteration (all maps/travs)
-	probs = get_overall_correctness_probability(src_dir,targ_dir)
+		# get and plot overall average probability of correct prediction at each iteration (all maps/travs)
+		probs = get_overall_correctness_probability(src_dir,targ_dir)
 
-	# get the average score
+	organize_gifs = True 
+	if organize_gifs:
+		# copy all gifs from src_dir into a separate folder 
+		organize_all_gifs(src_dir,targ_dir+"/all_gifs/")
 
 if __name__ == '__main__':
 	main()

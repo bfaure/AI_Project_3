@@ -854,8 +854,9 @@ class viterbi_matrix:
 					transition_matrix[y][x].parent_costs = normalized_prob_given_anc
 
 					# figure out which parent has the highest transition probability
-					best_parent_transition = 0.0
+					#best_parent_transition = 0.0
 
+					'''
 					# figure out which is the best parent
 					best_parent_prob = 0.0
 
@@ -866,6 +867,7 @@ class viterbi_matrix:
 						if (cur_val*cur_parent.value)>best_parent_prob:
 							best_parent_prob = cur_val*cur_parent.value
 							transition_matrix[y][x].parent = cur_parent
+					'''
 
 					anc_prob_total = 0.0 # sum of P(x)*T(x) for all parents x
 
