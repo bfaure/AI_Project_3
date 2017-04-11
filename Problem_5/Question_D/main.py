@@ -3,176 +3,33 @@ import time
 import random
 import os
 from copy import deepcopy, copy
-
 import imageio
 import threading
-
 import signal
-
-#from helpers import viterbi_matrix, viterbi_node
-
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 from matplotlib import cm
 from matplotlib import mlab as ml
 from matplotlib import colors
-
 import numpy as np
-
-
 import Cython, subprocess
 import shutil, filecmp
 
-if os.path.exists("helpers.pyx"):
-	if filecmp.cmp("../helpers.py","helpers.pyx")==False: # if they are not the same already
+use_cython = False
+
+if use_cython:
+	if os.path.exists("helpers.pyx"):
+		if filecmp.cmp("../helpers.py","helpers.pyx")==False: # if they are not the same already
+			shutil.copyfile("../helpers.py","helpers.pyx")
+	else:
 		shutil.copyfile("../helpers.py","helpers.pyx")
+
+	val = subprocess.Popen('python setup.py build_ext --inplace',shell=True).wait()
 else:
-	shutil.copyfile("../helpers.py","helpers.pyx")
+	sys.path.insert(0,"..")
 
-val = subprocess.Popen('python setup.py build_ext --inplace',shell=True).wait()
-
-
-#import Cython
-#import subprocess
-
-#sys.path.insert(0,"..")
-#val = subprocess.Popen('python ../setup.py build_ext --inplace',shell=True).wait()
-
-from helpers import viterbi_matrix,viterbi_node
-
-threads_open = 0
-gif_manager_sleep_time = 0.1
-
-# waits until there are at least num_pngs in parent_folder then calls make_gif()
-def gif_creation_manager(parent_folder,num_pngs):
-	global threads_open
-	threads_open += 1 # increment number of open gif managers
-
-	# wait until all png's are written
-	while True:
-		if exiting: return
-		items = os.listdir(parent_folder)
-		num_cur_png = 0
-		for elem in items:
-			if elem.find(".png")!=-1: num_cur_png+=1
-		if num_cur_png==num_pngs:
-			break
-		else:
-			time.sleep(2.0)
-
-	# assemble the gif
-	make_gif(parent_folder)
-
-	threads_open-=1
-	return
-
-# writes a gif in parent_folder made up of all it's sorted .png files
-def make_gif(parent_folder):
-	items = os.listdir(parent_folder)
-	png_filenames = []
-	for elem in items:
-		if elem.find(".png")!=-1:
-			png_filenames.append(elem)
-
-	#sorted(png_filenames,key=int())
-	sorted_png = []
-	while True:
-		lowest = 10000000
-		lowest_idx = -1
-		for p in png_filenames:
-			val = int(p.split("-")[2].split(".")[0])
-			if lowest_idx==-1 or val<lowest:
-				lowest = val
-				lowest_idx = png_filenames.index(p)
-		sorted_png.append(png_filenames[lowest_idx])
-		del png_filenames[lowest_idx]
-		if len(png_filenames)==0: break
-	png_filenames = sorted_png
-
-	with imageio.get_writer(parent_folder+"/prediction-heatmap.gif", mode='I',duration=0.2) as writer:
-		for filename in png_filenames:
-			image = imageio.imread(parent_folder+"/"+filename)
-			writer.append_data(image)
-
-open_grids = ""
-
-def exit_handler(signum,frame):
-	global exiting
-	exiting = True
-	for a in open_grids:
-		a.signal_exit()
-	print("\nExiting...")
-	sys.exit(0)
-
-def create_png(src_tsv,targ_png,trav_so_far,dpi):
-	#print(src_tsv+" "+targ_png+" ",trav_so_far)
-	actual_location = trav_so_far[-1]
-	zs = []
-	smallest_z = 10
-
-	f = open(src_tsv,"r")
-	rows = f.read().split("\n")
-	for y in range(len(rows)):
-		row = []
-		src_row = rows[y].split("\t")
-		if len(src_row) in [0,1]: continue
-		for item in src_row:
-			val = float(item)
-			row.append(val)
-			if val<smallest_z and val!=0: smallest_z = val
-		zs.append(row)
-
-	smallest_scaled_z = 10
-	for y in range(len(zs)):
-		row = []
-		for x in range(len(zs[y])):
-			if zs[y][x]==0.0: val = smallest_z-(smallest_z/2.0)
-			else: val = zs[y][x]
-			zs[y][x] = val
-			if val<smallest_scaled_z: smallest_scaled_z = val
-
-	Z = np.array(zs)
-
-	fig,ax = plt.subplots()
-
-	png_title = targ_png.split("/")[1]+" | "+targ_png.split("/")[2]+" | "
-	png_title += src_tsv.split("/")[-1].split(".")[0].split("-")[-1]
-
-	fig.suptitle(png_title,fontsize=12,y=1.02)
-
-	ax.set_xlabel("X Coordinate")
-	ax.set_ylabel("Y Coordinate")
-
-	ax.xaxis.set_label_position('top')
-	ax.xaxis.tick_top()
-
-	text_x = 1
-	text_y = int(len(zs)/10)
-
-	ax.annotate('Actual Location',xy=(actual_location[0],actual_location[1]),xytext=(text_x,text_y),
-				arrowprops=dict(arrowstyle="-|>"), color='white') #ha="right",va="center")   #facecolor='white',shrink=0.01), color='white')
-
-	#cax = ax.imshow(Z,cmap='plasma',norm=colors.LogNorm(vmin=smallest_scaled_z, vmax=1.0))
-	cax = ax.imshow(Z,cmap='plasma')
-	#cax = ax.imshow(Z,cmap='plasma',norm=colors.LogNorm(vmin=Z.min(),vmax=Z.max()))
-
-	trav_xs = []
-	trav_ys = []
-	for s in trav_so_far:
-		trav_xs.append(s[0])
-		trav_ys.append(s[1])
-	ax.plot(trav_xs,trav_ys,lw=0.5,c='black')
-
-	ticks = [smallest_scaled_z,Z.max()]
-	ylabels = ["%0.5f"%smallest_scaled_z,"%0.5f"%Z.max()]
-
-	cbar = fig.colorbar(cax,ticks=ticks)
-	cbar.ax.set_yticklabels(ylabels)
-
-	#save_spot = save_base+"prediction-heatmap-"+str(iteration)+".png"
-	fig.savefig(targ_png,bbox_inches='tight',dpi=dpi)
-	plt.close()
+from helpers import viterbi_matrix,viterbi_node, make_gif, create_png
 
 def get_traversal_sequence(src_txt):
 	f = open(src_txt,"r")
@@ -189,7 +46,9 @@ def get_traversal_sequence(src_txt):
 				y = int(y[:-1])
 				seq.append([x,y])
 				if len(seq)==100:
+					f.close()
 					return seq
+	f.close()
 	return seq
 
 def get_most_recent_data_dir():
@@ -210,33 +69,139 @@ def get_most_recent_data_dir():
 		print("ERROR: Must first generate data, none found.")
 	return most_recent_name
 
+# parses a txt file to re-create the matrix in 2D list form
+def resurrect_condition_matrix(src_txt):
+	f = open(src_txt,"r")
+	lines = f.read().split("          0")[1].split("\n")
+	m = []
+	for l in lines:
+		if l.find("|")==-1: continue
+		if l.split("|")[0]=="     ": continue
+		l = l.replace(">"," ").replace("<"," ").replace("-"," ")
+		row = []
+		elems = l.split("|")[1].split(" ")
+		for e in elems:
+			if e not in ["N","H","T","B"]: continue
+			#if len(e)
+
+			row.append(e.strip())
+		if len(row)>0: m.append(row)
+	f.close()
+	return m
+
+def get_bounding_rect(x_set,y_set):
+	x0,y0,x1,y1 = 1000,1000,0,0
+	for xs,ys in zip(x_set,y_set):
+		min_x = min(xs)
+		max_x = max(xs)
+		min_y = min(ys)
+		max_y = max(ys)
+
+		if min_x<x0: x0 = min_x 
+		if max_x>x1: x1 = max_x 
+		if min_y<y0: y0 = min_y  
+		if max_y>y1: y1 = max_y 
+
+	return x0,y0,x1,y1
+
+def create_likely_trajectories_pic(src_txt,targ_png,conditions_matrix,dpi=750):
+	f = open(src_txt)
+	regions = f.read().split("~~~")[1:]
+
+	traj_probs = [] # probability for each trajectory
+
+	traj_x = [] # x coordinates
+	traj_y = [] # y coordinates
+
+	for region in regions:
+		items =  region.split("Sequence Probability: ")[1]
+		traj_probs.append(items.split("\n")[0][:6])
+		seq_x = []
+		seq_y = []
+		lines = items.split("\n")[1:]
+		for l in lines:
+			if l.find("          0")!=-1: break
+			if l in [""," ","  "]: continue
+			elems = l.split(" ")
+			for i in elems:
+				if i in [""," ","  "]: continue
+				x,y = i.split(",")
+				x = int(x[1:])
+				y = int(y[:-1])
+				seq_x.append(x)
+				seq_y.append(y)
+		traj_x.append(seq_x)
+		traj_y.append(seq_y)
+
+	# variables used to store the bounding box of all sequences
+	x0,y0,x1,y1 = get_bounding_rect(traj_x,traj_y)
+
+	iteration = targ_png.split("/")[-1].split("-")[2].split(".")[0]
+	#iteration = src_txt.split("-")[2].split(".")[0]
+
+	png_title = targ_png.split("/")[1]+" | "+targ_png.split("/")[2]+" | "
+	png_title += iteration
+
+	fig,ax = plt.subplots()
+	title = fig.suptitle(png_title,fontsize=10,y=0.99)
+	#title.set_position()
+
+	ax.set_xlabel("X Coordinate",fontsize=8)
+	ax.set_ylabel("Y Coordinate",fontsize=8)
+
+	for y in range(len(conditions_matrix)):
+		for x in range(len(conditions_matrix[y])):
+			ax.annotate(conditions_matrix[y][x],xy=(x-0.4,y-0.5),fontsize=3)
+
+	line_handles = []
+
+	# plot the 9 less likely sequences
+	i=1
+	for seq_x,seq_y in zip(reversed(traj_x[1:]),reversed(traj_y[1:])):
+		line_label = str(traj_probs[i])
+		line = ax.plot(seq_x,seq_y,lw=2,label=line_label)#,alpha=1.0-(float(i)/15))
+		i+=1
+
+	# plot the highest probability sequence in diff color
+	line = ax.plot(traj_x[0],traj_y[0],lw=2.0,label=traj_probs[0])
+
+	plt.legend(fontsize=6, bbox_to_anchor=(1.05,1),loc=2,borderaxespad=0.)
+
+	plt.xlim([x0-4,x1+4])
+	plt.ylim([y0-4,y1+4])
+
+	plt.xticks(range(x0,x1,2),fontsize=4)
+	plt.yticks(range(y0,y1,2),fontsize=4)
+
+	fig.savefig(targ_png,bbox_inches='tight',dpi=dpi)
+	plt.close()
 
 def main():
 	# generate execution data given data in Question_C folder
-	regenerate_data = True
+	regenerate_data = False
 	if regenerate_data:
 		print("--> Generating data...\n")
-		start_time = time.time()
-		src_dir = "../Question_C/data/"
+
+		start_time   = time.time()
+		src_dir      = "../Question_C/data/"
 		runtime_code = str(int(time.time()))
 
-		num_grid_files = 1
+		num_grid_files      = 1
 		traversals_per_file = 1
-		grid_width = 100
-		grid_height = 100
+		grid_width          = 100
+		grid_height         = 100
 		overall_total_score = 0
 
 		for grid_idx in range(num_grid_files):
 			map_dir = src_dir+"map_"+str(grid_idx)+"/"
-			tsv = map_dir+"grid_"+str(grid_idx)+".tsv"
-			v = viterbi_matrix(load_path=tsv)
+			tsv     = map_dir+"grid_"+str(grid_idx)+".tsv"
+			v       = viterbi_matrix(load_path=tsv)
 			total_score = 0
-
 			for trav_idx in range(traversals_per_file):
-				trav_file = map_dir+"traversal_"+str(trav_idx)+".txt"
-				save_dir = "exec_data-"+runtime_code+"/map_"+str(grid_idx)+"/traversal_"+str(trav_idx)
+				trav_file   = map_dir+"traversal_"+str(trav_idx)+".txt"
+				save_dir    = "exec_data-"+runtime_code+"/map_"+str(grid_idx)+"/traversal_"+str(trav_idx)
 				total_score += v.load_observations(trav_file,grid_width=grid_width,grid_height=grid_height,path=True,save_dir=save_dir,print_nothing=True)
-				if trav_idx!=traversals_per_file-1: v.reload_conditions_matrix() # reset weights / bounds
+				if trav_idx !=traversals_per_file-1: v.reload_conditions_matrix() # reset weights / bounds
 
 			data_file = open("exec_data-"+runtime_code+"/map_"+str(grid_idx)+"/meta.txt","w")
 			data_file.write("Total Score: "+str(total_score)+"\n")
@@ -249,8 +214,7 @@ def main():
 		print("\nDone. Total time: "+str(end_time-start_time)[:7]+" seconds")
 		print("Overall total score: "+str(overall_total_score)+"\n")
 
-
-	generate_pngs_and_gifs = False
+	generate_pngs_and_gifs = True
 	# generate gifs and pngs for the data
 	if generate_pngs_and_gifs:
 		print("--> Generating images...\n")
@@ -258,7 +222,7 @@ def main():
 
 		num_png = 0
 		num_gif = 0
-		dpi = 200
+		dpi     = 180
 
 		sys.stdout.write("Generating .png and .gif files... ")
 		sys.stdout.flush()
@@ -266,29 +230,32 @@ def main():
 		map_dirs = os.listdir(src)
 		for m in map_dirs:
 			if os.path.isdir(src+m):
-				trav_dirs = os.listdir(src+m)
-
+				cur_cond_matrix = None
+				trav_dirs 	    = os.listdir(src+m)
 				for t in trav_dirs:
-
 					if os.path.isdir(src+m+"/"+t):
 						sys.stdout.write("\r"+m+" - "+t+"                                                                     \n")
 						sys.stdout.flush()
-
 						data_files = os.listdir(src+m+"/"+t)
 
-						# parse out the actual traversal sequence
+						# parse out the actual traversal sequence and the current condition matrix
 						for d in data_files:
 							if d.find("actual_traversal_sequence")!=-1:
 								actual_traversal_sequence = get_traversal_sequence(src+m+"/"+t+"/"+d)
+								if cur_cond_matrix is None: cur_cond_matrix = resurrect_condition_matrix(src+m+"/"+t+"/"+d)
 								break
+
+						# create pngs for the 10 most likely sequences (taken at 10, 50, 100 iterations)
+						for d in data_files:
+							if d.find("likely_trajectories")!=-1 and d.find(".txt")!=-1:
+								traj_f = d.split(".")[0]+".png"
+								create_likely_trajectories_pic( src+m+"/"+t+"/"+d , src+m+"/"+t+"/"+traj_f ,cur_cond_matrix )
 
 						# create a new png for each prediction float matrix
 						for d in data_files:
 							if d.find("prediction-floats")!=-1:
 								idx = d.split(".")[0].split("-")[2]
-								#actual_loc = actual_traversal_sequence[int(idx)-1]
 								trav_so_far = actual_traversal_sequence[:int(idx)]
-								#create_png(src+m+"/"+t+"/"+d,src+m+"/"+t+"/"+"prediction-heatmap-"+idx+".png",actual_loc)
 								create_png(src+m+"/"+t+"/"+d,src+m+"/"+t+"/"+"prediction-heatmap-"+idx+".png",trav_so_far,dpi)
 								num_png+=1
 								sys.stdout.write("\rGenerating .png and .gif files... GIF: "+str(num_gif)+", PNG: "+str(num_png)+"        ")
@@ -298,12 +265,11 @@ def main():
 						make_gif(src+m+"/"+t)
 						num_gif+=1
 
-		sys.stdout.write("\nDone. Total time: "+str(time.time()-start_time)[:7]+" seconds\n")
+		sys.stdout.write("\nDone. Total time: "+str(time.time()-start_time)[:7]+" seconds\n\n")
 		sys.stdout.flush()
-		return
 
-	dir_name = "exec_data-"+runtime_code
-	os.rename(dir_name,dir_name+"-(complete)")
+	#dir_name = "exec_data-"+runtime_code
+	#os.rename(dir_name,dir_name+"-(complete)")
 
 if __name__ == '__main__':
 	main()

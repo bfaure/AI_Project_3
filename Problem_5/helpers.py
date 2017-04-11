@@ -15,6 +15,7 @@ from matplotlib import cm
 from matplotlib import mlab as ml
 from matplotlib import colors
 
+import imageio
 import threading
 
 map_name = ""
@@ -22,6 +23,103 @@ traversal_name = ""
 save_base = ""
 png_managers = []
 started_png_managers = 0
+
+# writes a gif in parent_folder made up of all it's sorted .png files
+def make_gif(parent_folder):
+	items = os.listdir(parent_folder)
+	png_filenames = []
+	for elem in items:
+		if elem.find(".png")!=-1 and elem.find("heatmap")!=-1:
+			png_filenames.append(elem)
+
+	sorted_png = []
+	while True:
+		lowest = 10000000
+		lowest_idx = -1
+		for p in png_filenames:
+			val = int(p.split("-")[2].split(".")[0])
+			if lowest_idx==-1 or val<lowest:
+				lowest = val
+				lowest_idx = png_filenames.index(p)
+		sorted_png.append(png_filenames[lowest_idx])
+		del png_filenames[lowest_idx]
+		if len(png_filenames)==0: break
+	png_filenames = sorted_png
+
+	with imageio.get_writer(parent_folder+"/prediction-heatmap.gif", mode='I',duration=0.2) as writer:
+		for filename in png_filenames:
+			image = imageio.imread(parent_folder+"/"+filename)
+			writer.append_data(image)
+
+def create_png(src_tsv,targ_png,trav_so_far,dpi):
+	#print(src_tsv+" "+targ_png+" ",trav_so_far)
+	actual_location = trav_so_far[-1]
+	zs = []
+	smallest_z = 10
+
+	f = open(src_tsv,"r")
+	rows = f.read().split("\n")
+	for y in range(len(rows)):
+		row = []
+		src_row = rows[y].split("\t")
+		if len(src_row) in [0,1]: continue
+		for item in src_row:
+			val = float(item)
+			row.append(val)
+			if val<smallest_z and val!=0: smallest_z = val
+		zs.append(row)
+
+	smallest_scaled_z = 10
+	for y in range(len(zs)):
+		row = []
+		for x in range(len(zs[y])):
+			if zs[y][x]==0.0: val = smallest_z-(smallest_z/2.0)
+			else: val = zs[y][x]
+			zs[y][x] = val
+			if val<smallest_scaled_z: smallest_scaled_z = val
+
+	Z = np.array(zs)
+
+	fig,ax = plt.subplots()
+
+	png_title = targ_png.split("/")[1]+" | "+targ_png.split("/")[2]+" | "
+	png_title += src_tsv.split("/")[-1].split(".")[0].split("-")[-1]
+
+	fig.suptitle(png_title,fontsize=12,y=1.02)
+
+	ax.set_xlabel("X Coordinate")
+	ax.set_ylabel("Y Coordinate")
+
+	ax.xaxis.set_label_position('top')
+	ax.xaxis.tick_top()
+
+	text_x = 1
+	#text_y = int(len(zs)/10)
+	text_y = 5
+
+	ax.annotate('Actual Agent Location',xy=(actual_location[0],actual_location[1]),xytext=(text_x,text_y),
+				arrowprops=dict(arrowstyle="-"), color='white') #ha="right",va="center")   #facecolor='white',shrink=0.01), color='white')
+
+	#cax = ax.imshow(Z,cmap='plasma',norm=colors.LogNorm(vmin=smallest_scaled_z, vmax=1.0))
+	cax = ax.imshow(Z,cmap='plasma')
+	#cax = ax.imshow(Z,cmap='plasma',norm=colors.LogNorm(vmin=Z.min(),vmax=Z.max()))
+
+	#trav_xs = []
+	#trav_ys = []
+	#for s in trav_so_far:
+	#	trav_xs.append(s[0])
+	#	trav_ys.append(s[1])
+	#ax.plot(trav_xs,trav_ys,lw=0.1,c='white')
+
+	ticks = [smallest_scaled_z,Z.max()]
+	ylabels = ["%0.5f"%smallest_scaled_z,"%0.5f"%Z.max()]
+
+	cbar = fig.colorbar(cax,ticks=ticks)
+	cbar.ax.set_yticklabels(ylabels)
+
+	#save_spot = save_base+"prediction-heatmap-"+str(iteration)+".png"
+	fig.savefig(targ_png,bbox_inches='tight',dpi=dpi)
+	plt.close()
 
 # runs in separate thread, handles writing the png files
 def png_manager(scaled_zs,iteration,actual_location,smallest_scaled_z,traversal_name):
@@ -71,7 +169,6 @@ def thread_starter():
 
 	while started_png_managers>0:
 		time.sleep(0.1)
-
 
 # get the bounding box of the input sequence
 def get_sequence_bounds(sequence):
@@ -177,17 +274,17 @@ class viterbi_matrix:
 
 	# sets up directory for saving plot png's to
 	def init_plot_directory(self,save_dir):
-		global map_name
-		global traversal_name
-		global save_base
+		#global map_name
+		#global traversal_name
+		#global save_base
 
 		# check to ensure directory structure exists
 		path_items = save_dir.split("/")
 		self.map_name = path_items[1]
 		self.traversal_name = path_items[2]
 
-		map_name = path_items[1]
-		traversal_name = path_items[2]
+		#map_name = path_items[1]
+		#traversal_name = path_items[2]
 
 		if not os.path.exists(path_items[0]):
 			os.makedirs(path_items[0])
@@ -199,7 +296,6 @@ class viterbi_matrix:
 					rmtree(path_items[0]+"/"+path_items[1]+"/"+path_items[2])
 		os.makedirs(path_items[0]+"/"+path_items[1]+"/"+path_items[2])
 		self.save_base = save_dir+"/"
-		save_base = self.save_base
 
 	# loads in an observation file (.txt)
 	# if buffer_size=None then none of the original conditions_matrix will be trimmed, if
@@ -209,10 +305,10 @@ class viterbi_matrix:
 	# originally 500x500 but the agent rarely makes if very far to justify that large of a search
 	# space) - see self.adjust_environment_bounds()
 	def load_observations(self,observation_path,grid_width=-1,grid_height=-1,path=False,method="default",save_dir=None,print_nothing=True):
-		if save_dir is not None:
-			self.init_plot_directory(save_dir) # if saving plot pictures
-		else:
-			self.save_base = None
+
+		# set up directory to save data to
+		if save_dir is not None: self.init_plot_directory(save_dir) # if saving plot pictures
+		else: self.save_base = None
 
 		# ensure the file exists
 		if not os.path.exists(observation_path):
@@ -259,14 +355,12 @@ class viterbi_matrix:
 		sys.stdout.write("success. ")
 		print("Path: "+str(len(self.actual_traversal_path))+", Observations: "+str(len(self.queued_readings)))
 
-		self.transition_matrices = []
+		#self.transition_matrices = []
 
 		# trim the environment down to a smaller area containing the real movement of the agent
-		if grid_width!=-1 and grid_height!=-1:
-			self.adjust_environment_bounds(grid_width,grid_height)
+		if grid_width!=-1 and grid_height!=-1: self.adjust_environment_bounds(grid_width,grid_height)
 
-		#if grid_buffer_size is not None: self.adjust_environment_bounds(grid_buffer_size)
-
+		# initialize the self.prediction_matrices list
 		self.init_prediction_matrix()
 
 		self.print_transition       = False
@@ -290,14 +384,13 @@ class viterbi_matrix:
 		# if we are performing path approximations, print the full actual path on each iteration
 		self.print_full_traversal = False if path else True
 
-		i=0
-
+		# open files used for logging data
 		if save_dir is not None: log_file = open(self.save_base+"meta.txt","w")
 		if save_dir is not None: anc_file = open(self.save_base+"anc.txt","w")
 
 		start_time = time.time()
-
 		total_score = 0
+		i=0
 
 		for self.cur_action,self.cur_reading in zip(self.queued_actions[:max_limit],self.queued_readings[:max_limit]):
 
@@ -331,7 +424,10 @@ class viterbi_matrix:
 				if save_dir is not None:
 					self.save_predicted_sequence(pred_seq,pred_prob,i+1,"traversal_sequence")
 
-			#if i in [9,49,99]: self.save_heatmap(i)
+				if (i+1) in [10,50,100]:
+					trajectories,probabilities = self.get_predicted_sequences()
+					self.save_predicted_sequences(i+1,trajectories,probabilities)
+
 			if save_dir is not None:
 				# save ancestor data for current prediction matrix
 				if self.print_ancestors: self.save_anc_info(i+1,anc_file)
@@ -386,15 +482,53 @@ class viterbi_matrix:
 			log_file.write("Total Time: "+str(time.time()-start_time)+"\n")
 			log_file.close()
 
-		#if save_dir is not None:
-		#	if not self.started_thread_manager:
-		#		self.thread_manager.start()
-		#		self.started_thread_manager = True
-		#	for mngr in self.png_managers:
-		#		mngr.start()
-
 		if path:
 			return total_score
+
+	# saves a list of predicted sequences to the same file
+	def save_predicted_sequences(self,iteration,trajectories,probs):
+		filename = self.save_base+"prediction-likely_trajectories-"+str(iteration)+".txt"
+		f = open(filename,"w")
+
+		for t,p in zip(trajectories,probs):
+			f.write("\n~~~\n")
+			f.write("\nSequence Probability: "+str(p)+"\n")
+			self._write_single_sequence(t,device=f)
+		f.close()
+
+	# get the num_loc most likely locations in the current predictions matrix
+	def predict_locations(self,num_loc):
+		mat = self.prediction_matrices[-1]
+		pred_locs = [] # predicted locations
+		loc_probs = [] # predicted probabilities
+		# get the num_loc most likely ending locations
+		while len(pred_locs)<num_loc:
+			cur_loc,cur_prob = self.predict_location(mat,exclude=pred_locs)
+			pred_locs.append(cur_loc)
+			loc_probs.append(cur_prob)
+		return pred_locs,loc_probs
+
+	def get_predicted_sequences(self,num_seq=10,score=True):
+		# get num_seq most likely ending locations on the current prediction matrix
+		seq_end_locs,seq_probs = self.predict_locations(num_seq)
+		pred_seqs = []
+		# iterate over returned end locations and reconstruct path
+		for loc in seq_end_locs:
+			pred_seqs.append(self.rectify_path(loc))
+		return pred_seqs,seq_probs
+
+	# takes an ending location (x,y) and follows it back (starting with the most recent prediction matrix) until
+	# it finds a cell with no parents, i.e. the starting location
+	def rectify_path(self,end_location):
+		path = [end_location]
+		cur_x, cur_y = end_location[0],end_location[1]
+		cur_cell = self.prediction_matrices[-1][cur_y][cur_x]
+		while True:
+			cur_parent = cur_cell.parent
+			if cur_parent==None: return path
+			path.insert(0,cur_parent.coords)
+			cur_cell = cur_parent
+		return path
 
 	def save_predicted_sequence(self,preq_seq,pred_prob,iteration,name):
 		save_spot = self.save_base+"prediction-"+name+"-"+str(iteration)+".txt"
@@ -654,111 +788,68 @@ class viterbi_matrix:
 
 					# get the probabilities of having descended from any of the possible neighbors
 					for n_x,n_y in ns:
-						if n_x==x and n_y==y: continue
+						if n_x==x and n_y==y: continue # if the current cell, skip (handle after loop)
 						if condition_matrix[n_y][n_x].value=="B": continue
 
 						anc = old_pred_matrix[n_y][n_x]
-						#anc_probability = anc.value
 
 						# probability of having transitioned from this ancestor
 						cur_prob_given_anc = 0.0
-						#transition_matrix[y][x].parent_costs.append(anc_cost)
 
 						# cell above current cell
-						#if n_x==x and n_y==y-1:
 						if n_y==y-1:
-							#if condition_matrix[n_y][n_x].value=="B":
-							#	if cur_action in ["Down","D"]:
-
 							# if action was down
-							if cur_action in ["Down","D"]:
-								cur_prob_given_anc = 0.9
-								#anc_cost *= 0.9
-							else:
-								cur_prob_given_anc = 0.1
-								#anc_cost *= 0.1
+							if cur_action in ["Down","D"]: cur_prob_given_anc = 0.9
+							else: 						   cur_prob_given_anc = 0.1
 
 						# cell below current cell
-						#if n_x==x and n_y==y+1:
 						if n_y==y+1:
-							if cur_action in ["Up","U"]:
-								cur_prob_given_anc = 0.9
-								#anc_cost *= 0.9
-							else:
-								cur_prob_given_anc = 0.1
-								#anc_cost *= 0.1
+							if cur_action in ["Up","U"]: cur_prob_given_anc = 0.9
+							else: 						 cur_prob_given_anc = 0.1
 
 						# cell left of current cell
-						#if n_x==x-1 and n_y==y:
 						if n_x==x-1:
 							# if the action was right
-							if cur_action in ["Right","R"]:
-								cur_prob_given_anc = 0.9
-								#anc_cost *= 0.9
-							else:
-								cur_prob_given_anc = 0.1
-								#anc_cost *= 0.1
+							if cur_action in ["Right","R"]: cur_prob_given_anc = 0.9
+							else:    					    cur_prob_given_anc = 0.1
 
 						# cell right of current cell
-						#if n_x==x+1 and n_y==y:
 						if n_x==x+1:
 							# if the action was left
-							if cur_action in ["Left","L"]:
-								cur_prob_given_anc = 0.9
-								#anc_cost *= 0.9
-							else:
-								cur_prob_given_anc = 0.1
-								#anc_cost *= 0.1
-
-						# if the probability of this ancestor is >0
-						#if anc_prob is not None:
-
-						#anc_total_cost = anc_cost*anc_prior_prob
+							if cur_action in ["Left","L"]: cur_prob_given_anc = 0.9
+							else: 						   cur_prob_given_anc = 0.1
 
 						# add cost of having transitioned from this possible ancestor
 						total_anc_prob+=cur_prob_given_anc
-						#if anc_cost>highest_anc_prob:
-						#	transition_matrix[y][x].parent = anc
-						#	highest_anc_prob = anc_cost
 
 						transition_matrix[y][x].parent_costs.append(cur_prob_given_anc)
 						transition_matrix[y][x].parents.append(anc)
 
-					'''
-					if condition_matrix[y][x].value==cur_reading:
-						if self.is_blocked_in_direction(x,y,cur_action):
-							myself_prob_given_anc = 0.9
-						else:
-							myself_prob_given_anc = 0.09
-					else:
-						if self.is_blocked_in_direction(x,y,cur_action):
-							myself_prob_given_anc = 0.1
-						else:
-							myself_prob_given_anc = 0.01
-					'''
-
+					# calculate probability of having stayed in the current location
 					myself_prob_given_anc = 0.9 if condition_matrix[y][x].value==cur_reading else 0.1
-					if self.is_blocked_in_direction(x,y,cur_action):
-						myself_prob_given_anc *= 0.9
-					else:
-						myself_prob_given_anc *= 0.1
 
+					# if the reported action would not have been possible because the higher probability ancestor is a blocked cell
+					if self.is_blocked_in_direction(x,y,cur_action): myself_prob_given_anc *= 0.9
+					else: myself_prob_given_anc *= 0.1
 
+					# add the probability of having stayed to total probability
 					total_anc_prob+=myself_prob_given_anc
 
 					# normalizing prob_given_anc values
 					normalized_prob_given_anc = []
 					anc = []
 
-					normalized_prob_given_anc.append(myself_prob_given_anc)#/total_anc_prob)
+					# add a pointer back to the same location
+					normalized_prob_given_anc.append(myself_prob_given_anc)
 					anc.append(old_pred_matrix[y][x])
 
+					# put all ancestors of the current x,y in the anc list,
 					for i in range(len(transition_matrix[y][x].parents)):
 						cur = transition_matrix[y][x].parents[i]
 						cur_val = transition_matrix[y][x].parent_costs[i]
-						normalized_prob_given_anc.append(cur_val)#/total_anc_prob)
-						#normalized_prob_given_anc.append(cur_val)
+						normalized_prob_given_anc.append(cur_val)
 						anc.append(cur)
+
 					transition_matrix[y][x].parents = anc
 					transition_matrix[y][x].parent_costs = normalized_prob_given_anc
 
@@ -772,15 +863,8 @@ class viterbi_matrix:
 						cur_parent = transition_matrix[y][x].parents[i]
 						cur_val = transition_matrix[y][x].parent_costs[i]
 
-						'''
 						if (cur_val*cur_parent.value)>best_parent_prob:
-							#best_parent_prob = cur_val*cur_parent.value
 							best_parent_prob = cur_val*cur_parent.value
-							transition_matrix[y][x].parent = cur_parent
-						'''
-
-						if cur_val > best_parent_transition:
-							best_parent_transition = cur_val
 							transition_matrix[y][x].parent = cur_parent
 
 					anc_prob_total = 0.0 # sum of P(x)*T(x) for all parents x
@@ -790,46 +874,23 @@ class viterbi_matrix:
 						cur_val = transition_matrix[y][x].parents[i].value
 						cur_trans = transition_matrix[y][x].parent_costs[i]
 						anc_prob_total += (cur_val*cur_trans)
-						#anc_prob_total += cur_trans
-
-					#my_prior_val *= 0.1 if condition_matrix[y][x].value==cur_reading else 0.0
-					#if my_prior_val>highest_anc_prob: transition_matrix[y][x].parent = old_pred_matrix[y][x]
-
-					# add the current location to the list of possible ancestors
-					#transition_matrix[y][x].parents.append(old_pred_matrix[y][x])
-					#transition_matrix[y][x].parent_costs.append(my_prior_val)
-					#total_anc_prob+=my_prior_val
 
 					# probability of being in this spot given the reported reading
 					this_spot_prob = 0.9 if condition_matrix[y][x].value==cur_reading else 0.1
 
-
 					# multiply by the sum of all P(x-1)*alpha(x-1) for x-1 = ancestors of x where x = current location
 					transition_matrix[y][x].value = this_spot_prob * anc_prob_total
-
-					# multiply by the highest probabilitity of ancestors
-					#transition_matrix[y][x].value = this_spot_prob*best_parent_prob
-
-					# multiply by the highest transition probability of ancestors
-					#transition_matrix[y][x].value = this_spot_prob*best_parent_transition
-
-
 
 		transition_matrix = self.normalize_matrix(transition_matrix)
 		self.prediction_matrices.append(transition_matrix)
 
-	def is_blocked_in_direction(self,x,y,direction):
-		x1,y1 = self.get_adjusted_coord(x,y,direction)
-		#if x1<=0 or x1>=self.num_cols-1: return True
-		#if y1<=0 or y1>=self.num_rows-1: return True
-		try:
-			val = self.conditions_matrix[y1][x1].value
-		except:
-			return False
-		#if self.conditions_matrix[y1][x1].value=="B": return True
-		#return False
-		if val=="B": return True
-		return False
+	# provided current action, checks if the current cell would have had to have come from a blocked cell
+	def is_blocked_in_direction(self,x,y,action):
+		x1,y1 = self.get_adjusted_coord(x,y,action)
+		try: val = self.conditions_matrix[y1][x1].value
+		except: return False # ancestor is out of bounds
+		if val=="B": return True # ancestor is blocked
+		return False # ancestor is open
 
 	def get_adjusted_coord(self,x,y,direction,fwd=True):
 		if fwd:
@@ -905,7 +966,7 @@ class viterbi_matrix:
 		self.print_transition = print_transition
 		self.print_condition = print_condition
 
-		self.transition_matrices = []
+		#self.transition_matrices = []
 		self.init_conditions_matrix()
 
 		self.observed_actions = []
@@ -980,13 +1041,14 @@ class viterbi_matrix:
 	# pred_matrix: prediction matrix
 	#
 	# return: [x,y] (x,y in [0,1,2]), most likely current location
-	def predict_location(self,pred_matrix):
+	def predict_location(self,pred_matrix,exclude=None):
 		highest_prob = 0
 		location 	 = [-1,-1]
 		for y in range(len(pred_matrix)):
 			for x in range(len(pred_matrix[y])):
 				val = pred_matrix[y][x].value
-				if val > highest_prob:
+				if (val>highest_prob):
+					if exclude is not None and [x,y] in exclude: continue
 					highest_prob = val
 					location = [x,y]
 		return location, highest_prob
@@ -1557,9 +1619,11 @@ class viterbi_matrix:
 		if len(self.prediction_matrices)!=0 and self.print_ancestors:
 			self.print_anc_info()
 
-		if len(self.transition_matrices)!=0 and self.print_transition:
+		'''
+		if len(#self.transition_matrices)!=0 and self.print_transition:
 			sys.stdout.write("\n Transition Matrix:\n")
-			self.print_matrix(self.transition_matrices[-1],desired_item_size)
+			self.print_matrix(#self.transition_matrices[-1],desired_item_size)
+		'''
 
 		if self.temp_anc_matrix is not None and self.display_temp_ancestor_matrix:
 			print("\n Ancestors Matrix: ")
