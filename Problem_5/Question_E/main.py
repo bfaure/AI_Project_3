@@ -261,27 +261,49 @@ def get_most_recent_data_dir(parent_dir):
 	return most_recent_name
 
 def organize_all_by_type(src_dir,targ_dir,ext=".gif"):
+	sys.stdout.write("\nCopying all "+ext+" to targ_dir... ")
 	if src_dir[-1]!="/": src_dir+="/" 
 	if targ_dir[-1]!="/": targ_dir+="/"
 
 	if not os.path.exists(targ_dir): os.makedirs(targ_dir)
 	map_dirs = os.listdir(src_dir)
+	num=0
 	for m_d in map_dirs:
 		if os.path.isdir(src_dir+m_d):
 			trav_dirs = os.listdir(src_dir+m_d)
 			for t_d in trav_dirs:
-				data_files = os.listdir(src_dir+m_d+"/"+t_d)
-				for d in data_files:
-					if d.find(ext)!=-1:
-						shutil.copyfile(src_dir+m_d+"/"+t_d+"/"+d,targ_dir+d)
+				if os.path.isdir(src_dir+m_d+"/"+t_d):
+					data_files = os.listdir(src_dir+m_d+"/"+t_d)
+					for d in data_files:
+						if d.find(ext)!=-1:
+							targ_f = targ_dir+m_d+"-"+t_d+ext
+							shutil.copyfile(src_dir+m_d+"/"+t_d+"/"+d,targ_f)
+							num+=1
+							sys.stdout.write("\rCopying all "+ext+" to targ_dir... "+str(num)+"       ")
+	sys.stdout.write("\nDone\n")
 
+def organize_all_likely_traj(src_dir,targ_dir):
+	sys.stdout.write("\nCopying all likely trajectory pngs... ")
+	if src_dir[-1]!="/": src_dir+="/" 
+	if targ_dir[-1]!="/": targ_dir+="/"
 
+	if not os.path.exists(targ_dir): os.makedirs(targ_dir)
+	map_dirs = os.listdir(src_dir)
+	num=0
+	for m_d in map_dirs:
+		if os.path.isdir(src_dir+m_d):
+			trav_dirs = os.listdir(src_dir+m_d)
+			for t_d in trav_dirs:
+				if os.path.isdir(src_dir+m_d+"/"+t_d):
+					data_files = os.listdir(src_dir+m_d+"/"+t_d)
+					for d in data_files:
 
-	if os.path.exists("helpers.pyx"):
-		if filecmp.cmp("../helpers.py","helpers.pyx")==False: # if they are not the same already
-			shutil.copyfile("../helpers.py","helpers.pyx")
-	else:
-		shutil.copyfile("../helpers.py","helpers.pyx")
+						if d.find(".png")!=-1 and d.find("likely_trajectories")!=-1:
+							targ_f = targ_dir+m_d+"-"+t_d+"-"+d 
+							shutil.copyfile(src_dir+m_d+"/"+t_d+"/"+d,targ_f)
+							num+=1
+							sys.stdout.write("\rCopying all likely trajectory pngs... "+str(num)+"     ")
+	sys.stdout.write("\nDone\n")
 
 
 def main():
@@ -290,7 +312,7 @@ def main():
 	src_dir = parent_dir+"/"+get_most_recent_data_dir(parent_dir)
 	targ_dir = "cleaned_data/"
 
-	plots = True 
+	plots = False
 	if plots:
 		# get and plot overall average scores at each iteration (all maps/traversals)
 		avgs = get_overall_average_score(src_dir,targ_dir)
@@ -298,10 +320,16 @@ def main():
 		# get and plot overall average probability of correct prediction at each iteration (all maps/travs)
 		probs = get_overall_correctness_probability(src_dir,targ_dir)
 
-	organize_gifs = True 
+	organize_gifs = False 
 	if organize_gifs:
 		# copy all gifs from src_dir into a separate folder 
-		organize_all_gifs(src_dir,targ_dir+"/all_gifs/")
+		organize_all_by_type(src_dir,targ_dir+"/all_gifs/",".gif")
+
+	organize_likely_traj = True 
+	if organize_likely_traj:
+		# copy all prediction-likely_trajectories-xxx.png files to separate folder 
+		organize_all_likely_traj(src_dir,targ_dir+"/all_likely_traj/")
+
 
 if __name__ == '__main__':
 	main()
