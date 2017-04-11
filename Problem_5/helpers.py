@@ -508,6 +508,7 @@ class viterbi_matrix:
 			loc_probs.append(cur_prob)
 		return pred_locs,loc_probs
 
+	# gets the num_seq most likely traversal sequences given the current state
 	def get_predicted_sequences(self,num_seq=10,score=True):
 		# get num_seq most likely ending locations on the current prediction matrix
 		seq_end_locs,seq_probs = self.predict_locations(num_seq)
@@ -530,12 +531,14 @@ class viterbi_matrix:
 			cur_cell = cur_parent
 		return path
 
+	# writes a predicted traversal sequence out to file
 	def save_predicted_sequence(self,preq_seq,pred_prob,iteration,name):
 		save_spot = self.save_base+"prediction-"+name+"-"+str(iteration)+".txt"
 		f = open(save_spot,"w")
 		self._write_single_sequence(preq_seq,device=f)
 		f.close()
 
+	# writes the actual traversal path out to a file 
 	def save_actual_sequence(self):
 		save_spot = self.save_base+"actual_traversal_sequence.txt"
 		f = open(save_spot,"w")
@@ -736,7 +739,6 @@ class viterbi_matrix:
 			for x in range(self.num_cols):
 				new_node = viterbi_node()
 				new_node.value = 0.0
-				#new_node.value = self.init_probability if self.conditions_matrix[y][x].value!="B" else 0.0
 				new_node.parent = None
 				new_node.coords = [x,y]
 				row.append(new_node)
@@ -894,6 +896,8 @@ class viterbi_matrix:
 		if val=="B": return True # ancestor is blocked
 		return False # ancestor is open
 
+	# returns the [x,y] of cell in the opposite of 'direction' if fwd is True,
+	# otherwise returns the [x,y] of cell in 'direction'
 	def get_adjusted_coord(self,x,y,direction,fwd=True):
 		if fwd:
 			x1,y1 = x,y
@@ -1497,59 +1501,7 @@ class viterbi_matrix:
 	def print_matrix(self,matrix,desired_item_size=20):
 		self._write_matrix(matrix,desired_item_size,device=sys.stdout)
 
-		"""
-		x_axis = ""
-		for i in range(self.num_cols):
-			item = str(i)
-			left = True
-			while len(item)<desired_item_size+3:
-				if left:
-					left = False
-					item = " "+item
-				else:
-					left = True
-					item += " "
-			x_axis += item
-		sys.stdout.write("      "+x_axis+"\n")
-
-		delim_line = ''.join("_" for _ in range(self.num_cols*(desired_item_size+3)))
-		#delim_line = delim_line
-		sys.stdout.write("      "+delim_line[:len(delim_line)-1]+"\n")
-
-		idx = -1
-		for row in matrix:
-			idx+=1
-			before = "  "+str(idx)
-			while len(before)<5:
-				before+=" "
-			sys.stdout.write(before+"| ")
-			for item in row:
-
-				# if just a string entry
-				if str(item.value)==item.value:
-					real_item_size = len(str(item.value))
-					sys.stdout.write(str(item.value)[:desired_item_size])
-				# if a float entry, write out formatted
-				else:
-					real_item_size = desired_item_size
-					output_str = "%0."+str(desired_item_size-2)+"f"
-					sys.stdout.write(output_str % item.value)
-
-				if real_item_size<desired_item_size:
-					for _ in range(desired_item_size-real_item_size):
-						sys.stdout.write(" ")
-
-				if row.index(item) is not len(row)-1:
-					sys.stdout.write(" | ")
-				else:
-					sys.stdout.write(" |")
-			if matrix.index(row) is not len(matrix)-1:
-				sys.stdout.write("\n     |"+delim_line[:len(delim_line)-1]+"|\n")
-			else:
-				sys.stdout.write("\n     |"+delim_line[:len(delim_line)-1]+"|\n")
-
-		"""
-
+	# saves ancestor information to specified device id
 	def save_anc_info(self,iteration,device):
 		self._write_anc_info(iteration,device)
 
@@ -1592,7 +1544,7 @@ class viterbi_matrix:
 				device.write(cur_header_space+" tvalues: "+parents_trans_str+"\n")
 				device.write(cur_header_space+" pvalues: "+parents_values_str+"\n\n")
 
-
+	# calls _write_anc_info with sys.stdout as the device 
 	def print_anc_info(self):
 		self._write_anc_info(self.move_index-1,sys.stdout)
 
