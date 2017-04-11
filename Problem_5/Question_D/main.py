@@ -16,7 +16,7 @@ import numpy as np
 import Cython, subprocess
 import shutil, filecmp
 
-use_cython = False
+use_cython = True
 
 if use_cython:
 	if os.path.exists("helpers.pyx"):
@@ -134,13 +134,13 @@ def create_likely_trajectories_pic(src_txt,targ_png,conditions_matrix,dpi=750):
 		traj_y.append(seq_y)
 
 	# variables used to store the bounding box of all sequences
-	x0,y0,x1,y1 = get_bounding_rect(traj_x,traj_y)
+	#x0,y0,x1,y1 = get_bounding_rect(traj_x,traj_y)
 
 	iteration = targ_png.split("/")[-1].split("-")[2].split(".")[0]
 	#iteration = src_txt.split("-")[2].split(".")[0]
 
 	png_title = targ_png.split("/")[1]+" | "+targ_png.split("/")[2]+" | "
-	png_title += iteration
+	png_title += "Iteration "+iteration
 
 	fig,ax = plt.subplots()
 	title = fig.suptitle(png_title,fontsize=10,y=0.99)
@@ -167,11 +167,17 @@ def create_likely_trajectories_pic(src_txt,targ_png,conditions_matrix,dpi=750):
 
 	plt.legend(fontsize=6, bbox_to_anchor=(1.05,1),loc=2,borderaxespad=0.)
 
-	plt.xlim([x0-4,x1+4])
-	plt.ylim([y0-4,y1+4])
+	#plt.xlim([x0-4,x1+4])
+	#plt.ylim([y0-4,y1+4])
 
-	plt.xticks(range(x0,x1,2),fontsize=4)
-	plt.yticks(range(y0,y1,2),fontsize=4)
+	#plt.xticks(range(x0,x1,2),fontsize=4)
+	#plt.yticks(range(y0,y1,2),fontsize=4)
+
+	plt.xlim([0,len(conditions_matrix[0])])
+	plt.ylim([0,len(conditions_matrix)])
+
+	plt.xticks(range(0,len(conditions_matrix[0]),5),fontsize=4)
+	plt.yticks(range(0,len(conditions_matrix),5),fontsize=4)
 
 	fig.savefig(targ_png,bbox_inches='tight',dpi=dpi)
 	plt.close()
@@ -186,8 +192,8 @@ def main():
 		src_dir      = "../Question_C/data/"
 		runtime_code = str(int(time.time()))
 
-		num_grid_files      = 1
-		traversals_per_file = 1
+		num_grid_files      = 10
+		traversals_per_file = 10
 		grid_width          = 100
 		grid_height         = 100
 		overall_total_score = 0
@@ -215,14 +221,17 @@ def main():
 		print("Overall total score: "+str(overall_total_score)+"\n")
 
 	generate_pngs_and_gifs = True
+	just_likely_traversals = True
+
 	# generate gifs and pngs for the data
 	if generate_pngs_and_gifs:
 		print("--> Generating images...\n")
 		start_time = time.time()
 
-		num_png = 0
-		num_gif = 0
-		dpi     = 180
+		num_png  = 0
+		num_gif  = 0
+		num_traj = 0
+		dpi      = 200
 
 		sys.stdout.write("Generating .png and .gif files... ")
 		sys.stdout.flush()
@@ -234,7 +243,7 @@ def main():
 				trav_dirs 	    = os.listdir(src+m)
 				for t in trav_dirs:
 					if os.path.isdir(src+m+"/"+t):
-						sys.stdout.write("\r"+m+" - "+t+"                                                                     \n")
+						sys.stdout.write("\r"+m+" - "+t+"                                                                        \n")
 						sys.stdout.flush()
 						data_files = os.listdir(src+m+"/"+t)
 
@@ -250,19 +259,21 @@ def main():
 							if d.find("likely_trajectories")!=-1 and d.find(".txt")!=-1:
 								traj_f = d.split(".")[0]+".png"
 								create_likely_trajectories_pic( src+m+"/"+t+"/"+d , src+m+"/"+t+"/"+traj_f ,cur_cond_matrix )
+								num_traj+=1
+
 
 						# create a new png for each prediction float matrix
 						for d in data_files:
 							if d.find("prediction-floats")!=-1:
 								idx = d.split(".")[0].split("-")[2]
 								trav_so_far = actual_traversal_sequence[:int(idx)]
-								create_png(src+m+"/"+t+"/"+d,src+m+"/"+t+"/"+"prediction-heatmap-"+idx+".png",trav_so_far,dpi)
+								if not just_likely_traversals: create_png(src+m+"/"+t+"/"+d,src+m+"/"+t+"/"+"prediction-heatmap-"+idx+".png",trav_so_far,dpi)
 								num_png+=1
-								sys.stdout.write("\rGenerating .png and .gif files... GIF: "+str(num_gif)+", PNG: "+str(num_png)+"        ")
+								sys.stdout.write("\rGenerating .png and .gif files... GIF: "+str(num_gif)+", PNG: "+str(num_png)+", Trajectories (PNG): "+str(num_traj)+"          ")
 								sys.stdout.flush()
 
 						# generate a gif from the newly created .png files
-						make_gif(src+m+"/"+t)
+						if not just_likely_traversals: make_gif(src+m+"/"+t)
 						num_gif+=1
 
 		sys.stdout.write("\nDone. Total time: "+str(time.time()-start_time)[:7]+" seconds\n\n")

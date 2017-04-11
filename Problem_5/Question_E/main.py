@@ -17,6 +17,9 @@ def get_overall_average_score(src_dir,targ_dir):
 	sys.stdout.write("\nCalculating average scores... ")
 	sys.stdout.flush()
 
+	if src_dir[-1]!="/": src_dir+="/" 
+	if targ_dir[-1]!="/": targ_dir+="/"
+
 	# create directory if not already existant
 	if not os.path.exists(targ_dir): os.makedirs(targ_dir)
 
@@ -135,6 +138,9 @@ def get_overall_correctness_probability(src_dir,targ_dir):
 	sys.stdout.write("\nCalculating correctness probability... ")
 	sys.stdout.flush()
 
+	if src_dir[-1]!="/": src_dir+="/" 
+	if targ_dir[-1]!="/": targ_dir+="/"
+
 	# create directory if not already existant
 	if not os.path.exists(targ_dir): os.makedirs(targ_dir)
 
@@ -237,11 +243,24 @@ def get_overall_correctness_probability(src_dir,targ_dir):
 	# return the list of averages
 	return average_scores
 
-#def get_average_score_by_map(src_dir):
 
+def get_most_recent_data_dir(parent_dir):
+	items = os.listdir(parent_dir)
+	most_recent_name = None
+	most_recent_secs = 0
+	for item in items:
+		if os.path.isdir(parent_dir+"/"+item) and item.find("exec_data")!=-1:
+			secs = int(item.split("-")[1])
+			if secs>most_recent_secs:
+				most_recent_secs = secs
+				most_recent_name = item
+	if most_recent_name==None:
+		print("ERROR: Must first generate data, none found.")
+	return most_recent_name
 
 def main():
-	src_dir = "../Question_D/exec_data-1491791539-(complete)/"
+	parent_dir = "../Question_D"
+	src_dir = parent_dir+"/"+get_most_recent_data_dir(parent_dir)
 	targ_dir = "cleaned_data/"
 
 	# get and plot overall average scores at each iteration (all maps/traversals)
