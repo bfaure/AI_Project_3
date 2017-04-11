@@ -20,6 +20,9 @@ def main():
 	#actions=["Left","Up","Right","Down"]
 	#readings=["N","H","H","N"]
 
+	#actions = ["Left","Left","Up","Right","Right","Down","Left"]
+	#readings = ["N","N","H","H","T","N","N"]
+
 	v_matrix = viterbi_matrix() # construct object from helpers.py file
 	v_matrix.init_observations(actions,readings,path=True,print_condition=False,print_transition=False) # execute operation
 

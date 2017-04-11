@@ -272,6 +272,7 @@ class viterbi_matrix:
 		self.print_transition       = False
 		self.print_condition  	    = True
 		self.print_actual_traversal = True
+		self.print_ancestors 		= False
 
 		self.move_index = 1
 		self.current_predicted_length = 1
@@ -292,6 +293,8 @@ class viterbi_matrix:
 		i=0
 
 		if save_dir is not None: log_file = open(self.save_base+"meta.txt","w")
+		if save_dir is not None: anc_file = open(self.save_base+"anc.txt","w")
+
 		start_time = time.time()
 
 		total_score = 0
@@ -330,13 +333,12 @@ class viterbi_matrix:
 
 			#if i in [9,49,99]: self.save_heatmap(i)
 			if save_dir is not None:
-				#if i in [9,49,99]:
-				#if (i+1)%5==0:
-				#if i%2==1:
-				#self.save_heatmap(i+1)
+				# save ancestor data for current prediction matrix
+				if self.print_ancestors: self.save_anc_info(i+1,anc_file)
+				# save the current prediction matrix
 				self.save_prediction_matrix(i+1)
 
-				log_file.write("Iteration #"+str(i)+"\n")
+				log_file.write("Iteration #"+str(i+1)+"\n")
 				log_file.write("Action: "+str(self.cur_action)+", Reading: "+str(self.cur_reading)+"\n")
 
 				if path:
@@ -351,6 +353,7 @@ class viterbi_matrix:
 
 					log_file.write("Predicted Current Location: ("+str(p_x)+","+str(p_y)+")\n")
 					log_file.write("Actual Current Location: ("+str(a_x)+","+str(a_y)+")\n")
+					log_file.write("Value at Actual: "+self.conditions_matrix[a_y][a_x].value+"\n")
 
 				log_file.write("...\n")
 
@@ -598,7 +601,8 @@ class viterbi_matrix:
 			row = []
 			for x in range(self.num_cols):
 				new_node = viterbi_node()
-				new_node.value = self.init_probability if self.conditions_matrix[y][x].value!="B" else 0.0
+				new_node.value = 0.0
+				#new_node.value = self.init_probability if self.conditions_matrix[y][x].value!="B" else 0.0
 				new_node.parent = None
 				new_node.coords = [x,y]
 				row.append(new_node)
@@ -626,103 +630,85 @@ class viterbi_matrix:
 		transition_matrix 	= self.empty_prediction_matrix() # create new matrix
 		condition_matrix 	= self.conditions_matrix # matrix holding cell conditions
 
-		'''
-		# set probabilities given the reported reading compared to state values
-		#
-		# iterate over all possible current locations
-		for y in range(self.num_rows):
-			for x in range(self.num_cols):
-
-				# can't ever be in a blocked cell, set probability to zero
-				if condition_matrix[y][x].value=="B": transition_matrix[y][x].value = 0.0
-
-				# if the reported cell type, likelyhood of cur_reading being correct is 90%
-				elif condition_matrix[y][x].value==cur_reading: transition_matrix[y][x].value = 0.9
-
-				# in this state only if there was a mis-reading of the cur_reading
-				else: transition_matrix[y][x].value = 0.1
-
-		# NEW: normalizing the transition_matrix (effectively the emission matrix for current step)
-		#transition_matrix = self.normalize_matrix(transition_matrix)
-
-		if len(self.transition_matrices)>0:
-			prior_transition_matrix = self.transition_matrices[-1]
-		else:
-			prior_transition_matrix = None
-
-		ancestors = []
-		'''
-
 		# iterate over all x,y in matrix and set values for new transition matrix
 		for y in range(self.num_rows):
 			for x in range(self.num_cols):
 				if condition_matrix[y][x].value=="B":
 					transition_matrix[y][x].value==0.0
 				else:
+					# to be filled with pointers to all possible parents
 					transition_matrix[y][x].parents = []
-					transition_matrix[y][x].parent_costs = []
 
-					up_prob = None
-					down_prob = None
-					left_prob = None
-					right_prob = None
+					# to be filled with the transition costs of all possible parents
+					transition_matrix[y][x].parent_costs = []
 
 					# get all possible neighbors
 					ns = self.get_neighbors([x,y])
 
 					# value of this cell from last iteration
-					my_prior_val = copy(old_pred_matrix[y][x].value)
+					myself_anc_prob = old_pred_matrix[y][x].value
+					myself_prob_given_anc = 0.0
 
 					highest_anc_prob = 0.0
 					total_anc_prob = 0.0
 
 					# get the probabilities of having descended from any of the possible neighbors
 					for n_x,n_y in ns:
+						if n_x==x and n_y==y: continue
 						if condition_matrix[n_y][n_x].value=="B": continue
-						#if condition_matrix[n_y][n_x].value=="B":
-						#	if
-						#	self_ancestor_prob = 0.9
-						#	continue
 
 						anc = old_pred_matrix[n_y][n_x]
-						anc_prior_prob = copy(anc.value)
+						#anc_probability = anc.value
 
-						anc_cost = 0.0
-						anc_cost = anc_prior_prob
-						#anc_prob = None
-
+						# probability of having transitioned from this ancestor
+						cur_prob_given_anc = 0.0
 						#transition_matrix[y][x].parent_costs.append(anc_cost)
 
 						# cell above current cell
-						if n_x==x and n_y==y-1:
+						#if n_x==x and n_y==y-1:
+						if n_y==y-1:
+							#if condition_matrix[n_y][n_x].value=="B":
+							#	if cur_action in ["Down","D"]:
+
 							# if action was down
 							if cur_action in ["Down","D"]:
-								anc_cost *= 0.9
+								cur_prob_given_anc = 0.9
+								#anc_cost *= 0.9
 							else:
-								anc_cost *= 0.1
+								cur_prob_given_anc = 0.1
+								#anc_cost *= 0.1
 
 						# cell below current cell
-						if n_x==x and n_y==y+1:
+						#if n_x==x and n_y==y+1:
+						if n_y==y+1:
 							if cur_action in ["Up","U"]:
-								anc_cost *= 0.9
+								cur_prob_given_anc = 0.9
+								#anc_cost *= 0.9
 							else:
-								anc_cost *= 0.1
+								cur_prob_given_anc = 0.1
+								#anc_cost *= 0.1
 
 						# cell left of current cell
-						if n_x==x-1 and n_y==y:
+						#if n_x==x-1 and n_y==y:
+						if n_x==x-1:
 							# if the action was right
 							if cur_action in ["Right","R"]:
-								anc_cost *= 0.9
+								cur_prob_given_anc = 0.9
+								#anc_cost *= 0.9
 							else:
-								anc_cost *= 0.1
+								cur_prob_given_anc = 0.1
+								#anc_cost *= 0.1
 
 						# cell right of current cell
-						if n_x==x+1 and n_y==y:
+						#if n_x==x+1 and n_y==y:
+						if n_x==x+1:
 							# if the action was left
 							if cur_action in ["Left","L"]:
-								anc_cost *= 0.9
+								cur_prob_given_anc = 0.9
+								#anc_cost *= 0.9
 							else:
-								anc_cost *= 0.1
+								cur_prob_given_anc = 0.1
+								#anc_cost *= 0.1
 
 						# if the probability of this ancestor is >0
 						#if anc_prob is not None:
@@ -730,192 +716,136 @@ class viterbi_matrix:
 						#anc_total_cost = anc_cost*anc_prior_prob
 
 						# add cost of having transitioned from this possible ancestor
-						total_anc_prob+=anc_cost
-						if anc_cost>highest_anc_prob:
-							transition_matrix[y][x].parent = anc
-							highest_anc_prob = anc_cost
+						total_anc_prob+=cur_prob_given_anc
+						#if anc_cost>highest_anc_prob:
+						#	transition_matrix[y][x].parent = anc
+						#	highest_anc_prob = anc_cost
 
-						transition_matrix[y][x].parent_costs.append(anc_cost*anc_prior_prob)
+						transition_matrix[y][x].parent_costs.append(cur_prob_given_anc)
 						transition_matrix[y][x].parents.append(anc)
 
-					# if on a boundary
-					#if len(ns)<8:
-					#	adjoining_boundaries = self.get_adjoining_boundaries(x,y)
+					'''
+					if condition_matrix[y][x].value==cur_reading:
+						if self.is_blocked_in_direction(x,y,cur_action):
+							myself_prob_given_anc = 0.9
+						else:
+							myself_prob_given_anc = 0.09
+					else:
+						if self.is_blocked_in_direction(x,y,cur_action):
+							myself_prob_given_anc = 0.1
+						else:
+							myself_prob_given_anc = 0.01
+					'''
 
-					#	if cur_action in adjoining_boundaries:
+					myself_prob_given_anc = 0.9 if condition_matrix[y][x].value==cur_reading else 0.1
+					if self.is_blocked_in_direction(x,y,cur_action):
+						myself_prob_given_anc *= 0.9
+					else:
+						myself_prob_given_anc *= 0.1
 
 
-					#my_prior_prob = my_prior_val*0.1
+					total_anc_prob+=myself_prob_given_anc
 
-					my_prior_val *= 0.1 if condition_matrix[y][x].value==cur_reading else 0.0
-					if my_prior_val>highest_anc_prob: transition_matrix[y][x].parent = old_pred_matrix[y][x]
+					# normalizing prob_given_anc values
+					normalized_prob_given_anc = []
+					anc = []
+
+					normalized_prob_given_anc.append(myself_prob_given_anc)#/total_anc_prob)
+					anc.append(old_pred_matrix[y][x])
+
+					for i in range(len(transition_matrix[y][x].parents)):
+						cur = transition_matrix[y][x].parents[i]
+						cur_val = transition_matrix[y][x].parent_costs[i]
+						normalized_prob_given_anc.append(cur_val)#/total_anc_prob)
+						#normalized_prob_given_anc.append(cur_val)
+						anc.append(cur)
+					transition_matrix[y][x].parents = anc
+					transition_matrix[y][x].parent_costs = normalized_prob_given_anc
+
+					# figure out which parent has the highest transition probability
+					best_parent_transition = 0.0
+
+					# figure out which is the best parent
+					best_parent_prob = 0.0
+
+					for i in range(len(transition_matrix[y][x].parents)):
+						cur_parent = transition_matrix[y][x].parents[i]
+						cur_val = transition_matrix[y][x].parent_costs[i]
+
+						'''
+						if (cur_val*cur_parent.value)>best_parent_prob:
+							#best_parent_prob = cur_val*cur_parent.value
+							best_parent_prob = cur_val*cur_parent.value
+							transition_matrix[y][x].parent = cur_parent
+						'''
+
+						if cur_val > best_parent_transition:
+							best_parent_transition = cur_val
+							transition_matrix[y][x].parent = cur_parent
+
+					anc_prob_total = 0.0 # sum of P(x)*T(x) for all parents x
+
+					# get the entire ancestor tree probability for this location
+					for i in range(len(transition_matrix[y][x].parents)):
+						cur_val = transition_matrix[y][x].parents[i].value
+						cur_trans = transition_matrix[y][x].parent_costs[i]
+						anc_prob_total += (cur_val*cur_trans)
+						#anc_prob_total += cur_trans
+
+					#my_prior_val *= 0.1 if condition_matrix[y][x].value==cur_reading else 0.0
+					#if my_prior_val>highest_anc_prob: transition_matrix[y][x].parent = old_pred_matrix[y][x]
 
 					# add the current location to the list of possible ancestors
-					transition_matrix[y][x].parents.append(old_pred_matrix[y][x])
-					transition_matrix[y][x].parent_costs.append(my_prior_val)
-					total_anc_prob+=my_prior_val
+					#transition_matrix[y][x].parents.append(old_pred_matrix[y][x])
+					#transition_matrix[y][x].parent_costs.append(my_prior_val)
+					#total_anc_prob+=my_prior_val
 
 					# probability of being in this spot given the reported reading
 					this_spot_prob = 0.9 if condition_matrix[y][x].value==cur_reading else 0.1
 
-					# set the probability of being at this spot
-					#transition_matrix[y][x].value = total_anc_prob*this_spot_prob
-					transition_matrix[y][x].value = this_spot_prob * total_anc_prob
 
-		"""
-		# set probabilities given the reported movement (cur_action) compared to condition neighbors
-		#
-		# iterate over all possible current locations
-		for y in range(self.num_rows):
-			ancestor_row = []
+					# multiply by the sum of all P(x-1)*alpha(x-1) for x-1 = ancestors of x where x = current location
+					transition_matrix[y][x].value = this_spot_prob * anc_prob_total
 
-			for x in range(self.num_cols):
-				anc_set = []
+					# multiply by the highest probabilitity of ancestors
+					#transition_matrix[y][x].value = this_spot_prob*best_parent_prob
 
-				# if the reported action was a translation to the right
-				if cur_action in ["Right","R"]:
-					# if in an inner column
-					if x>0 and x<=self.num_cols-1:
-						# if the cell to the left is blocked (i.e. we couldn't have come from left)
-						if condition_matrix[y][x-1].value=="B":
-							ancestor_row.append([x,y])
-							#transition_matrix[y][x].value *= 0.1
-							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.1
-							transition_matrix[y][x].value *= 0.1
-						# we could have legally made the reported move
-						else:
-							ancestor_row.append([x-1,y])
-							#transition_matrix[y][x].value *= 0.9
-							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.9
-							transition_matrix[y][x].value *= 0.9
-							#if prior_transition_matrix!=None:
-							#	prior
-
-					# if in the left column
-					if x==0:
-						# if a right translation could be prevented due to a blocked cell to the right
-						if condition_matrix[y][x+1].value=="B":
-							ancestor_row.append([x,y])
-							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.9
-							transition_matrix[y][x].value *= 0.9
-						# only could be here if the reported action was not actually performed
-						else:
-							ancestor_row.append([x,y])
-							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.1
-							transition_matrix[y][x].value *= 0.1
-
-				# if the reported action was a translation to the left
-				if cur_action in ["Left","L"]:
-					# if in an inner column
-					if x>=0 and x<self.num_cols-1:
-						# if the right cell is blocked (i.e. we couldn't have come from right)
-						if condition_matrix[y][x+1].value=="B":
-							ancestor_row.append([x,y])
-							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.1
-							transition_matrix[y][x].value *= 0.1
-						# we could have legally made the reported move
-						else:
-							ancestor_row.append([x+1,y])
-							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.9
-							transition_matrix[y][x].value *= 0.9
-
-					# if in the right column
-					if x==self.num_cols-1:
-						# if a left translation could be prevented due to a blocked cell to the left
-						if condition_matrix[y][x-1].value=="B":
-							ancestor_row.append([x,y])
-							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.9
-							transition_matrix[y][x].value *= 0.9
-						# only here if the reported action was not actually performed
-						else:
-							ancestor_row.append([x,y])
-							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.1
-							transition_matrix[y][x].value *= 0.1
-
-				# if the reported action was a translation up
-				if cur_action in ["Up","U"]:
-					# if in an inner row
-					if y>=0 and y<self.num_rows-1:
-						if condition_matrix[y+1][x].value=="B":
-							ancestor_row.append([x,y])
-							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.1
-							transition_matrix[y][x].value *= 0.1
-						else:
-							ancestor_row.append([x,y+1])
-							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.9
-							transition_matrix[y][x].value *= 0.9
-
-					# if in the bottom row
-					if y==self.num_rows-1:
-						if condition_matrix[y-1][x].value=="B":
-							ancestor_row.append([x,y])
-							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.9
-							transition_matrix[y][x].value *= 0.9
-						else:
-							ancestor_row.append([x,y])
-							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.1
-							transition_matrix[y][x].value *= 0.1
-
-				# if the reported action was a translation down
-				if cur_action in ["Down","D"]:
-					# if in an inner row
-					if y>0 and y<=self.num_rows-1:
-						if condition_matrix[y-1][x].value=="B":
-							ancestor_row.append([x,y])
-							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.1
-							transition_matrix[y][x].value *= 0.1
-						else:
-							ancestor_row.append([x,y-1])
-							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.9
-							transition_matrix[y][x].value *= 0.9
+					# multiply by the highest transition probability of ancestors
+					#transition_matrix[y][x].value = this_spot_prob*best_parent_transition
 
 
-					# if in the top row
-					if y==0:
-						if condition_matrix[y+1][x].value=="B":
-							ancestor_row.append([x,y])
-							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.9
-							transition_matrix[y][x].value *= 0.9
-						else:
-							ancestor_row.append([x,y])
-							#if prior_transition_matrix==None: transition_matrix[y][x].value *= 0.1
-							transition_matrix[y][x].value *= 0.1
-
-				ancestor_row.append(anc_set)
-
-			ancestors.append(ancestor_row)
-
-		temp_anc_matrix = []
-		for y in range(self.num_rows):
-			row = []
-			for x in range(self.num_cols):
-				new_node = viterbi_node()
-				new_node.value = "("+str(ancestors[y][x][0])+","+str(ancestors[y][x][1])+")"
-				row.append(new_node)
-			temp_anc_matrix.append(row)
-		self.temp_anc_matrix = temp_anc_matrix
-		"""
-
-		# NEW: normalizing the transition_matrix (effectively the emission matrix for current step)
-		#transition_matrix = self.normalize_matrix(transition_matrix)
-
-		# add new transition matrix to list of prior transition matrices
-		#self.transition_matrices.append(deepcopy(transition_matrix))
-		#self.transition_matrices.append(transition_matrix)
-
-		# create new prediction matrix by multiplying each element of the newly created transition matrix
-		# by the element in the same location of the prior prediction matrix
-		#new_pred_matrix = self.resolve_prediction_matrix(transition_matrix,old_pred_matrix,ancestors)
-
-		# normalize the new prediction matrix
-		#new_pred_matrix = self.normalize_matrix(new_pred_matrix)
-		#new_pred_matrix = transition_matrix
-
-		# add new prediction matrix to list
-		#self.prediction_matrices.append(new_pred_matrix)
 
 		transition_matrix = self.normalize_matrix(transition_matrix)
 		self.prediction_matrices.append(transition_matrix)
+
+	def is_blocked_in_direction(self,x,y,direction):
+		x1,y1 = self.get_adjusted_coord(x,y,direction)
+		#if x1<=0 or x1>=self.num_cols-1: return True
+		#if y1<=0 or y1>=self.num_rows-1: return True
+		try:
+			val = self.conditions_matrix[y1][x1].value
+		except:
+			return False
+		#if self.conditions_matrix[y1][x1].value=="B": return True
+		#return False
+		if val=="B": return True
+		return False
+
+	def get_adjusted_coord(self,x,y,direction,fwd=True):
+		if fwd:
+			x1,y1 = x,y
+			if direction in ["Left","L"]: 	x1+=  1
+			if direction in ["Right","R"]: 	x1+= -1
+			if direction in ["Up","U"]: 	y1+=  1
+			if direction in ["Down","D"]: 	y1+= -1
+			return x1,y1
+		else:
+			x1,y1 = x,y
+			if direction in ["Left","L"]: 	x1+= -1
+			if direction in ["Right","R"]: 	x1+=  1
+			if direction in ["Up","U"]: 	y1+= -1
+			if direction in ["Down","D"]: 	y1+=  1
+			return x1,y1
 
 	# creates a new matrix provided a prior prediction matrix and a transition matrix
 	def resolve_prediction_matrix(self,transition_matrix,old_pred_matrix,ancestors=None):
@@ -971,6 +901,7 @@ class viterbi_matrix:
 	def init_observations(self,seen_actions,seen_readings,path=True,print_transition=True,print_condition=True):
 
 		self.show_all = False
+		self.print_ancestors = True
 		self.print_transition = print_transition
 		self.print_condition = print_condition
 
@@ -1029,17 +960,20 @@ class viterbi_matrix:
 	def get_neighbors(self,current_location):
 		possible_neighbors = []
 
+		x0, y0 = current_location[0], current_location[1]
+
 		x_operations = [1,-1,0]
 		y_operations = [1,-1,0]
 
 		for y in y_operations:
 			for x in x_operations:
-				possible_neighbors.append([current_location[0]+x,current_location[1]+y])
+				possible_neighbors.append([x0+x,y0+y])
 
 		neighbors = []
 		for x,y in possible_neighbors:
+			# ensure in bounds...
 			if ((x>=0 and x<self.num_cols) and (y>=0 and y<self.num_rows)):
-				if x!=current_location[0] and y!=current_location[1]: continue
+				if x!=x0 and y!=y0: continue # skip diagonal neighbors
 				neighbors.append([x,y])
 		return neighbors
 
@@ -1271,24 +1205,24 @@ class viterbi_matrix:
 				if idx%6==0: device.write("\n")
 				device.write(" ("+str(a)+","+str(b)+")")
 
-		  #device.write("  "+" ".join("["+str(a)+","+str(b)+"]" for [a,b] in sequence))
-		  #device.write("\n\n")
+			#device.write("  "+" ".join("["+str(a)+","+str(b)+"]" for [a,b] in sequence))
+			#device.write("\n\n")
 
 		device.write("\n")
 
 		# create x axis to print above plot
 		x_axis = ""
 		for i in range(self.num_cols):
-		  item = str(i)
-		  left = True
-		  while len(item)<5:
-		    if left:
-		      left = False
-		      item = " "+item
-		    else:
-		      left = True
-		      item += " "
-		  x_axis += item
+			item = str(i)
+			left = True
+			while len(item)<5:
+				if left:
+					left = False
+					item = " "+item
+				else:
+					left = True
+					item += " "
+			x_axis += item
 		device.write("        "+x_axis+"\n")
 
 		x_axis_divider = "".join("_" for _ in range(5*self.num_cols))
@@ -1298,7 +1232,7 @@ class viterbi_matrix:
 
 		rows = []
 		for i in range(3*self.num_rows):
-		  rows.append("")
+			rows.append("")
 
 		# make shallow copy of the predicted sequence (a list of [x,y] coordinates)
 		seq = copy(sequence)
@@ -1313,128 +1247,128 @@ class viterbi_matrix:
 		# whatever we have so far in the rows[] array (any previous state matrices, iterations)
 		for y in range(self.num_rows):
 
-		  above_row = "" # row printed above current element row
-		  below_row = "" # row printed below current element row
-		  full_row  = "" # row holding current element row
-		  need_above = False # if we don't place anything in the above_row
-		  need_below = False # if we don't place anything in the below_row
+			above_row = "" # row printed above current element row
+			below_row = "" # row printed below current element row
+			full_row  = "" # row holding current element row
+			need_above = False # if we don't place anything in the above_row
+			need_below = False # if we don't place anything in the below_row
 
-		  for x in range(self.num_cols): # iterate over each element in current row
+			for x in range(self.num_cols): # iterate over each element in current row
 
-		    above_section = "     " # substring of above_row (to be appended)
-		    below_section = "     " # substring of below_row (to be appended)
+				above_section = "     " # substring of above_row (to be appended)
+				below_section = "     " # substring of below_row (to be appended)
 
-		    above_section = list(above_section)
-		    below_section = list(below_section)
+				above_section = list(above_section)
+				below_section = list(below_section)
 
-		    cur_cond = condition_matrix[y][x].value
-		    row = "  "+cur_cond+"  " # add the current element
-		    row = list(row)
+				cur_cond = condition_matrix[y][x].value
+				row = "  "+cur_cond+"  " # add the current element
+				row = list(row)
 
-		    if [x,y] in seq: # if this spot is in the traversal sequence
+				if [x,y] in seq: # if this spot is in the traversal sequence
 
-		      i = seq.index([x,y])
-		      skip = False
+					i = seq.index([x,y])
+					skip = False
 
-		      if rendered_node[i]==1:
-		        i+=1
-		        while True:
-		          if i==len(seq):
-		            skip = True
-		            break
-		          if x==seq[i][0] and y==seq[i][1]:
-		            if rendered_node[i]==0:
-		              rendered_node[i] = 1
-		              skip = False
-		              break
-		          i+=1
+					if rendered_node[i]==1:
+						i+=1
+						while True:
+							if i==len(seq):
+								skip = True
+								break
+							if x==seq[i][0] and y==seq[i][1]:
+								if rendered_node[i]==0:
+									rendered_node[i] = 1
+									skip = False
+									break
+							i+=1
 
-		      last_loc = None
-		      next_loc = None
+					last_loc = None
+					next_loc = None
 
-		      if not skip:
-		        if i>0:          last_loc = seq[i-1] # if there was an earlier element in sequence
-		        if i<len(seq)-1: next_loc = seq[i+1] # if there is another element in sequence
+					if not skip:
+						if i>0:          last_loc = seq[i-1] # if there was an earlier element in sequence
+						if i<len(seq)-1: next_loc = seq[i+1] # if there is another element in sequence
 
-		      if last_loc is not None:
-		        # if the prior location was in the same column
-		        if last_loc[0]==x:
-		          # if the prior location was in the above neighbor
-		          if last_loc[1]==y-1:
-		            above_section[2] = '|'
-		            need_above = True
-		          # if the prior location was in the below neighbor
-		          elif last_loc[1]==y+1:
-		            below_section[2] = '^'
-		            need_below = True
+					if last_loc is not None:
+						# if the prior location was in the same column
+						if last_loc[0]==x:
+							# if the prior location was in the above neighbor
+							if last_loc[1]==y-1:
+								above_section[2] = '|'
+								need_above = True
+							# if the prior location was in the below neighbor
+							elif last_loc[1]==y+1:
+								below_section[2] = '^'
+								need_below = True
 
-		        # if the prior location was in the same row
-		        elif last_loc[1]==y:
-		          # if the prior location was in the left neighbor
-		          if last_loc[0]==x-1: row[0],row[1] = '-','>'
-		          # if the prior location was in the right neighbor
-		          if last_loc[0]==x+1: row[3],row[4] = '<','-'
+						# if the prior location was in the same row
+						elif last_loc[1]==y:
+							# if the prior location was in the left neighbor
+							if last_loc[0]==x-1: row[0],row[1] = '-','>'
+							# if the prior location was in the right neighbor
+							if last_loc[0]==x+1: row[3],row[4] = '<','-'
 
-		      if next_loc is not None:
-		        # if the next location is in the same column
-		        if next_loc[0]==x:
-		          # if the next location is in the above neighbor
-		          if next_loc[1]==y-1:
-		            above_section[2] = '|'
-		            need_above = True
-		          # if the next location is in the below neighbor
-		          elif next_loc[1]==y+1:
-		            below_section[2] = 'v'
-		            need_below = True
+					if next_loc is not None:
+						# if the next location is in the same column
+						if next_loc[0]==x:
+							# if the next location is in the above neighbor
+							if next_loc[1]==y-1:
+								above_section[2] = '|'
+								need_above = True
+							# if the next location is in the below neighbor
+							elif next_loc[1]==y+1:
+								below_section[2] = 'v'
+								need_below = True
 
-		        # if the next location is in the same row
-		        elif next_loc[1]==y:
-		          # if the next location is in the left neighbor
-		          if next_loc[0]==x-1: row[0],row[1] = '<','-'
-		          # if the next location is in the right neighbor
-		          if next_loc[0]==x+1: row[3],row[4] = '-','>'
+						# if the next location is in the same row
+						elif next_loc[1]==y:
+							# if the next location is in the left neighbor
+							if next_loc[0]==x-1: row[0],row[1] = '<','-'
+							# if the next location is in the right neighbor
+							if next_loc[0]==x+1: row[3],row[4] = '-','>'
 
-		      # if the final destination
-		      if seq[len(seq)-1] == [x,y]:
-		        row[1] = '('
-		        row[3] = ')'
+					# if the final destination
+					if seq[len(seq)-1] == [x,y]:
+						row[1] = '('
+						row[3] = ')'
 
-		      # if the starting location
-		      if seq[0] == [x,y]:
-		        row[1] = '['
-		        row[3] = ']'
-
-
-		    above_section = "".join(above_section) # turn list to string
-		    below_section = "".join(below_section) # turn list to string
-		    row = "".join(row) # turn list to string
-
-		    # add items to this rows' above, below, and full row attributes
-		    above_row += above_section
-		    full_row  += row
-		    below_row += below_section
+					# if the starting location
+					if seq[0] == [x,y]:
+						row[1] = '['
+						row[3] = ']'
 
 
+				above_section = "".join(above_section) # turn list to string
+				below_section = "".join(below_section) # turn list to string
+				row = "".join(row) # turn list to string
 
-		  rows[3*y]   += above_row
-		  rows[3*y+1] += full_row
-		  rows[3*y+2] += below_row
+				# add items to this rows' above, below, and full row attributes
+				above_row += above_section
+				full_row  += row
+				below_row += below_section
 
-		  if need_above==False: empty_rows[3*y] = True # if we never put anything in above_row
-		  if need_below==False: empty_rows[3*y+2] = True # if we never put anything in below_row
+
+
+			rows[3*y]   += above_row
+			rows[3*y+1] += full_row
+			rows[3*y+2] += below_row
+
+			if need_above==False: empty_rows[3*y] = True # if we never put anything in above_row
+			if need_below==False: empty_rows[3*y+2] = True # if we never put anything in below_row
 
 		# print out all nonempty rows
 		for i in range(3*self.num_rows):
-		  if not empty_rows[i]:
-		    if (i+2)%3 == 0:
-		      item =" "+str(int(i/3))
-		      while len(item)<5:
-		        item += " "
-		    else:
-		      item = "     "
-		    item += "|  "
-		    print_row = item+rows[i]
-		    device.write(print_row+"\n")
+			if not empty_rows[i]:
+				if (i+2)%3 == 0:
+					item =" "+str(int(i/3))
+					while len(item)<5:
+						item += " "
+				else:
+					item = "     "
+				item += "|  "
+				print_row = item+rows[i]
+				device.write(print_row+"\n")
 		device.write("\n")
 
 	# prints a copy of the conditions_matrix with the provided sequence overlaid
@@ -1445,16 +1379,16 @@ class viterbi_matrix:
 	def _write_matrix(self,matrix,desired_item_size=20,device=None):
 		x_axis = ""
 		for i in range(self.num_cols):
-		  item = str(i)
-		  left = True
-		  while len(item)<desired_item_size+3:
-		    if left:
-		      left = False
-		      item = " "+item
-		    else:
-		      left = True
-		      item += " "
-		  x_axis += item
+			item = str(i)
+			left = True
+			while len(item)<desired_item_size+3:
+				if left:
+					left = False
+					item = " "+item
+				else:
+					left = True
+					item += " "
+			x_axis += item
 		device.write("      "+x_axis+"\n")
 
 		delim_line = ''.join("_" for _ in range(self.num_cols*(desired_item_size+3)))
@@ -1463,35 +1397,35 @@ class viterbi_matrix:
 
 		idx = -1
 		for row in matrix:
-		  idx+=1
-		  before = "  "+str(idx)
-		  while len(before)<5:
-		    before+=" "
-		  device.write(before+"| ")
-		  for item in row:
+			idx+=1
+			before = "  "+str(idx)
+			while len(before)<5:
+				before+=" "
+			device.write(before+"| ")
+			for item in row:
 
-		    # if just a string entry
-		    if str(item.value)==item.value:
-		      real_item_size = len(str(item.value))
-		      device.write(str(item.value)[:desired_item_size])
-		    # if a float entry, write out formatted
-		    else:
-		      real_item_size = desired_item_size
-		      output_str = "%0."+str(desired_item_size-2)+"f"
-		      device.write(output_str % item.value)
+				# if just a string entry
+				if str(item.value)==item.value:
+					real_item_size = len(str(item.value))
+					device.write(str(item.value)[:desired_item_size])
+				# if a float entry, write out formatted
+				else:
+					real_item_size = desired_item_size
+					output_str = "%0."+str(desired_item_size-2)+"f"
+					device.write(output_str % item.value)
 
-		    if real_item_size<desired_item_size:
-		      for _ in range(desired_item_size-real_item_size):
-		        device.write(" ")
+				if real_item_size<desired_item_size:
+					for _ in range(desired_item_size-real_item_size):
+						device.write(" ")
 
-		    if row.index(item) is not len(row)-1:
-		      device.write(" | ")
-		    else:
-		      device.write(" |")
-		  if matrix.index(row) is not len(matrix)-1:
-		    device.write("\n     |"+delim_line[:len(delim_line)-1]+"|\n")
-		  else:
-		    device.write("\n     |"+delim_line[:len(delim_line)-1]+"|\n")
+				if row.index(item) is not len(row)-1:
+					device.write(" | ")
+				else:
+					device.write(" |")
+			if matrix.index(row) is not len(matrix)-1:
+				device.write("\n     |"+delim_line[:len(delim_line)-1]+"|\n")
+			else:
+				device.write("\n     |"+delim_line[:len(delim_line)-1]+"|\n")
 
 	# desired_item_size: column width in characters
 	#
@@ -1552,6 +1486,52 @@ class viterbi_matrix:
 
 		"""
 
+	def save_anc_info(self,iteration,device):
+		self._write_anc_info(iteration,device)
+
+	# writes out to a specified device
+	def _write_anc_info(self,iteration=None,device=None):
+		if iteration is not None:
+			device.write("\n\n  x,y  |    Ancestor Information (Iteration "+str(iteration)+") \n")
+		else:
+			device.write("\n\n  x,y  |    Ancestor Information \n")
+
+		for y in range(self.num_rows):
+			for x in range(self.num_cols):
+				parents_str = ""
+
+				if len(self.prediction_matrices[-1][y][x].parents)==0: continue
+
+				for a in self.prediction_matrices[-1][y][x].parents:
+					a_x, a_y = a.coords
+					cur_parents_str = "("+str(a_x)+","+str(a_y)+")"
+					while len(cur_parents_str)<10:
+						cur_parents_str+=" "
+					parents_str += cur_parents_str
+
+				parents_trans_str = ""
+				for a in self.prediction_matrices[-1][y][x].parent_costs:
+					parents_trans_str+= "%0.6f" % a
+					parents_trans_str+= "  "
+
+				parents_values_str = ""
+				for a in self.prediction_matrices[-1][y][x].parents:
+					val = a.value
+					parents_values_str += "%0.6f" % val
+					parents_values_str += "  "
+
+				cur_header = " ("+str(x)+","+str(y)+")"
+				cur_header_space = "".join(" " for _ in range(len(cur_header)))
+
+				device.write(cur_header+" value:   %0.6f\n"%self.prediction_matrices[-1][y][x].value)
+				device.write(cur_header_space+" parents: "+parents_str+"\n")
+				device.write(cur_header_space+" tvalues: "+parents_trans_str+"\n")
+				device.write(cur_header_space+" pvalues: "+parents_values_str+"\n\n")
+
+
+	def print_anc_info(self):
+		self._write_anc_info(self.move_index-1,sys.stdout)
+
 	# prints out information about the current step, i.e. the current
 	# condition matrix (doesn't change over steps), the current prediction
 	# matrix (adjusted on each step), the current reported action, and the
@@ -1573,6 +1553,9 @@ class viterbi_matrix:
 		if condition_matrix is not None and self.print_condition:
 			sys.stdout.write("\n Condition Matrix:\n")
 			self.print_matrix(condition_matrix,desired_item_size)
+
+		if len(self.prediction_matrices)!=0 and self.print_ancestors:
+			self.print_anc_info()
 
 		if len(self.transition_matrices)!=0 and self.print_transition:
 			sys.stdout.write("\n Transition Matrix:\n")

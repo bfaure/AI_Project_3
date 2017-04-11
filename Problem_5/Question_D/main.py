@@ -9,8 +9,7 @@ import threading
 
 import signal
 
-sys.path.append("..")
-from helpers import viterbi_matrix, viterbi_node
+#from helpers import viterbi_matrix, viterbi_node
 
 import matplotlib
 matplotlib.use('Agg')
@@ -20,6 +19,27 @@ from matplotlib import mlab as ml
 from matplotlib import colors
 
 import numpy as np
+
+
+import Cython, subprocess
+import shutil, filecmp
+
+if os.path.exists("helpers.pyx"):
+	if filecmp.cmp("../helpers.py","helpers.pyx")==False: # if they are not the same already
+		shutil.copyfile("../helpers.py","helpers.pyx")
+else:
+	shutil.copyfile("../helpers.py","helpers.pyx")
+
+val = subprocess.Popen('python setup.py build_ext --inplace',shell=True).wait()
+
+
+#import Cython
+#import subprocess
+
+#sys.path.insert(0,"..")
+#val = subprocess.Popen('python ../setup.py build_ext --inplace',shell=True).wait()
+
+from helpers import viterbi_matrix,viterbi_node
 
 threads_open = 0
 gif_manager_sleep_time = 0.1
@@ -85,7 +105,7 @@ def exit_handler(signum,frame):
 	print("\nExiting...")
 	sys.exit(0)
 
-def create_png(src_tsv,targ_png,trav_so_far):
+def create_png(src_tsv,targ_png,trav_so_far,dpi):
 	#print(src_tsv+" "+targ_png+" ",trav_so_far)
 	actual_location = trav_so_far[-1]
 	zs = []
@@ -127,26 +147,31 @@ def create_png(src_tsv,targ_png,trav_so_far):
 	ax.xaxis.set_label_position('top')
 	ax.xaxis.tick_top()
 
-	ax.annotate('Actual Location',xy=(actual_location[0],actual_location[1]),xytext=(1,5),
+	text_x = 1
+	text_y = int(len(zs)/10)
+
+	ax.annotate('Actual Location',xy=(actual_location[0],actual_location[1]),xytext=(text_x,text_y),
 				arrowprops=dict(arrowstyle="-|>"), color='white') #ha="right",va="center")   #facecolor='white',shrink=0.01), color='white')
 
-	cax = ax.imshow(Z,cmap='plasma',norm=colors.LogNorm(vmin=smallest_scaled_z, vmax=1.0))
+	#cax = ax.imshow(Z,cmap='plasma',norm=colors.LogNorm(vmin=smallest_scaled_z, vmax=1.0))
+	cax = ax.imshow(Z,cmap='plasma')
+	#cax = ax.imshow(Z,cmap='plasma',norm=colors.LogNorm(vmin=Z.min(),vmax=Z.max()))
 
 	trav_xs = []
 	trav_ys = []
 	for s in trav_so_far:
 		trav_xs.append(s[0])
 		trav_ys.append(s[1])
-	ax.plot(trav_xs,trav_ys,lw=1,c='black')
-	#for snip in trav_so_far:
-	#	ax.imshow(snip,lw=2,c='black')
-	#ax.plot(trav_so_far,lw=2,c='black')
+	ax.plot(trav_xs,trav_ys,lw=0.5,c='black')
 
-	cbar = fig.colorbar(cax, ticks=[smallest_scaled_z,Z.max()])
-	cbar.ax.set_yticklabels(['0.0',str(Z.max())[:7]])
+	ticks = [smallest_scaled_z,Z.max()]
+	ylabels = ["%0.5f"%smallest_scaled_z,"%0.5f"%Z.max()]
+
+	cbar = fig.colorbar(cax,ticks=ticks)
+	cbar.ax.set_yticklabels(ylabels)
 
 	#save_spot = save_base+"prediction-heatmap-"+str(iteration)+".png"
-	fig.savefig(targ_png,bbox_inches='tight',dpi=200)
+	fig.savefig(targ_png,bbox_inches='tight',dpi=dpi)
 	plt.close()
 
 def get_traversal_sequence(src_txt):
@@ -190,14 +215,15 @@ def main():
 	# generate execution data given data in Question_C folder
 	regenerate_data = True
 	if regenerate_data:
+		print("--> Generating data...\n")
 		start_time = time.time()
 		src_dir = "../Question_C/data/"
 		runtime_code = str(int(time.time()))
 
 		num_grid_files = 1
-		traversals_per_file = 10
-		grid_width = 15
-		grid_height = 15
+		traversals_per_file = 1
+		grid_width = 100
+		grid_height = 100
 		overall_total_score = 0
 
 		for grid_idx in range(num_grid_files):
@@ -221,15 +247,18 @@ def main():
 
 		end_time = time.time()
 		print("\nDone. Total time: "+str(end_time-start_time)[:7]+" seconds")
-		print("Overall total score: "+str(overall_total_score))
+		print("Overall total score: "+str(overall_total_score)+"\n")
 
 
-	generate_pngs_and_gifs = True
+	generate_pngs_and_gifs = False
 	# generate gifs and pngs for the data
 	if generate_pngs_and_gifs:
+		print("--> Generating images...\n")
+		start_time = time.time()
 
 		num_png = 0
 		num_gif = 0
+		dpi = 200
 
 		sys.stdout.write("Generating .png and .gif files... ")
 		sys.stdout.flush()
@@ -260,7 +289,7 @@ def main():
 								#actual_loc = actual_traversal_sequence[int(idx)-1]
 								trav_so_far = actual_traversal_sequence[:int(idx)]
 								#create_png(src+m+"/"+t+"/"+d,src+m+"/"+t+"/"+"prediction-heatmap-"+idx+".png",actual_loc)
-								create_png(src+m+"/"+t+"/"+d,src+m+"/"+t+"/"+"prediction-heatmap-"+idx+".png",trav_so_far)
+								create_png(src+m+"/"+t+"/"+d,src+m+"/"+t+"/"+"prediction-heatmap-"+idx+".png",trav_so_far,dpi)
 								num_png+=1
 								sys.stdout.write("\rGenerating .png and .gif files... GIF: "+str(num_gif)+", PNG: "+str(num_png)+"        ")
 								sys.stdout.flush()
@@ -269,7 +298,7 @@ def main():
 						make_gif(src+m+"/"+t)
 						num_gif+=1
 
-		sys.stdout.write("\nDone\n")
+		sys.stdout.write("\nDone. Total time: "+str(time.time()-start_time)[:7]+" seconds\n")
 		sys.stdout.flush()
 		return
 
