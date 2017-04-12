@@ -46,6 +46,9 @@ def get_overall_average_score(src_dir,targ_dir):
 	# total number of trials read
 	trials_read = 0
 
+	# score on last iteration for all 100 experiments 
+	last_iteration_scores = []
+
 	for m in map_dirs:
 		# write out individual averages to this file
 		#cur_avgs_file = open(targ_dir+m+"-avg.txt","w")
@@ -83,10 +86,14 @@ def get_overall_average_score(src_dir,targ_dir):
 				for l in lines:
 					if l.find("Predicted Path Score")!=-1:
 						val = int(l.split(",")[0].split(": ")[1])
-						total_score+= val
+						total_score       += val
 						scores[score_idx] += val
-						score_idx += 1
+						score_idx         += 1
 
+				# add the final value to the list 
+				last_iteration_scores.append(val)
+
+				# write the total score out to file
 				all_scores_file.write(m+" - "+c+" - score: \t"+str(total_score)+"\n")
 
 				# close the meta.txt file
@@ -135,7 +142,30 @@ def get_overall_average_score(src_dir,targ_dir):
 	plt.show()
 
 	# return the list of averages
-	return average_scores
+	return average_scores,last_iteration_scores
+
+def plot_last_iteration_error(errors):
+
+	# create plot of last iteration scores
+	X = np.arange(1,len(errors)+1)
+	Y = np.array(errors)
+
+	fig,ax = plt.subplots()
+
+	ax.bar(X,Y,width=0.9,color='blue')
+
+	ax.set_xlabel("Experiment")
+	ax.set_ylabel("Final Iteration Error")
+	ax.set_title("Final Iteration Error, All 100 Experiments")
+
+	title_fontsize = 20
+	axis_label_fontsize = 20
+
+	ax.title.set_fontsize(title_fontsize)
+	ax.xaxis.label.set_fontsize(axis_label_fontsize)
+	ax.yaxis.label.set_fontsize(axis_label_fontsize)
+
+	plt.show()
 
 def get_overall_correctness_probability(src_dir,targ_dir):
 	sys.stdout.write("\nCalculating correctness probability... ")
@@ -306,26 +336,61 @@ def organize_all_likely_traj(src_dir,targ_dir):
 	sys.stdout.write("\nDone\n")
 
 
+def plot_last_sequence_error(f_name):
+	f = open(f_name,"r")
+	lines = f.read().split("\n")
+
+	y = []
+	for l in lines:
+		if l not in [""," "]:
+			y.append(float(l))
+
+	# create plot of last iteration scores
+	X = np.arange(1,len(y)+1)
+	Y = np.array(y)
+
+	fig,ax = plt.subplots()
+
+	ax.bar(X,Y,width=0.9,color='blue')
+
+	ax.set_xlabel("Timestep")
+	ax.set_ylabel("Average Error At Timestep x")
+	ax.set_title("Final Path Error, All 100 Experiments")
+
+	title_fontsize = 20
+	axis_label_fontsize = 20
+
+	ax.title.set_fontsize(title_fontsize)
+	ax.xaxis.label.set_fontsize(axis_label_fontsize)
+	ax.yaxis.label.set_fontsize(axis_label_fontsize)
+
+	plt.show()
+
 def main():
 
 	parent_dir = "../Question_D"
 	src_dir = parent_dir+"/"+get_most_recent_data_dir(parent_dir)
 	targ_dir = "cleaned_data/"
 
-	plots = False
+	plots = True
 	if plots:
 		# get and plot overall average scores at each iteration (all maps/traversals)
-		avgs = get_overall_average_score(src_dir,targ_dir)
+		avgs,last_iter = get_overall_average_score(src_dir,targ_dir)
 
 		# get and plot overall average probability of correct prediction at each iteration (all maps/travs)
 		probs = get_overall_correctness_probability(src_dir,targ_dir)
+
+		# plot the error at iteration 100 for all 100 experiments
+		plot_last_iteration_error(last_iter)
+
+		plot_last_sequence_error("cleaned_data/traj_100_scores.txt")
 
 	organize_gifs = False 
 	if organize_gifs:
 		# copy all gifs from src_dir into a separate folder 
 		organize_all_by_type(src_dir,targ_dir+"/all_gifs/",".gif")
 
-	organize_likely_traj = True 
+	organize_likely_traj = False 
 	if organize_likely_traj:
 		# copy all prediction-likely_trajectories-xxx.png files to separate folder 
 		organize_all_likely_traj(src_dir,targ_dir+"/all_likely_traj/")

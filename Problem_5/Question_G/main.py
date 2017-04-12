@@ -1,287 +1,335 @@
 import sys
 import time
 import random
+import os
 
+import shutil, filecmp
+
+from shutil import rmtree
 from copy import deepcopy, copy
 
-sys.path.append("..")
-from helpers import viterbi_matrix, viterbi_node
+from matplotlib import pyplot as plt
+from matplotlib import cm
+from matplotlib import mlab as ml
+from matplotlib import colors
 
-"""
-class grid(object):
-	def __init__(self,width=3,height=3):
-		self.width = width
-		self.height = height
-		self.init_cells()
-		self.init_current_location()
+import numpy as np
 
-	# initializes the list of cells and cell values
-	def init_cells(self):
-		self.cells = []
 
-		default = True 
-		if default:
-			self.cells = ["H","H","T","N","N","N","N","B","H"]
-			return 
+def get_overall_average_score(src_dir,targ_dir):
+	sys.stdout.write("\nCalculating average scores... ")
+	sys.stdout.flush()
 
-	# initialize the current location member variable, chooses among non-blocked cells
-	def init_current_location(self):
-		while True:
-			# get a possible x starting location
-			attempted_x = random.randint(1,self.width)
-			# get a possible y starting location
-			attempted_y = random.randint(1,self.height)
-			# if the spot isnt blocked, break
-			if self.get_cell_value(attempted_x,attempted_y) is not "B": break
-		# set the current location
-		self.current_location = [attempted_x,attempted_y]
+	if src_dir[-1]!="/": src_dir+="/" 
+	if targ_dir[-1]!="/": targ_dir+="/"
 
-	# if zero==False:
-	# x: [1,2,3,...,self.width]
-	# y: [1,2,3,...,self.height]
-	# else:
-	# x: [0,1,2,...,self.width-1]
-	# y: [0,1,2,...,self.height-1]
-	def get_cell_value(self,x,y,zero=False):
-		# adjust the coords if not starting at zero
-		if not zero:
-			x += -1
-			y += -1
-		return self.cells[(self.width*y)+x]
+	# create directory if not already existant
+	if not os.path.exists(targ_dir): os.makedirs(targ_dir)
 
-	# if zero==False:
-	# x: [1,2,3,...,self.width]
-	# y: [1,2,3,...,self.height]
-	# else:
-	# x: [0,1,2,...,self.width-1]
-	# y: [0,1,2,...,self.height-1]
-	def get_cell_value_estimate(self,x,y,zero=False):
-		# all possible cell values
-		possible_values = ["N","H","T"]
-		# get the actual cell value (from set 'possible_values')
-		real_value = self.get_cell_value(x,y,zero)
-		# remove the actual value from the list of possible fake values
-		del possible_values[possible_values.index(real_value)]
-		# get a random integer from 1 to 100
-		action = random.randint(1,100)
-		# return the real value
-		if action<=90: return real_value
-		# return a fake value
-		return random.choice(possible_values)
+	# check to ensure src_dir exists
+	if not os.path.exists(src_dir):
+		print("\nERROR: src_dir does not exist!")
+		return
 
-	# if zero==False:
-	# x: [1,2,3,...,self.width]
-	# y: [1,2,3,...,self.height]
-	# else:
-	# x: [0,1,2,...,self.width-1]
-	# y: [0,1,2,...,self.height-1]
-	# 
-	# checks if the input coordinates [x,y] are within the bounds stated above
-	def is_within_bounds(self,x,y,zero=False):
-		# adjust the coords if not starting at zero
-		if not zero:
-			x += -1
-			y += -1
+	# get all map_x directory names
+	map_dirs = os.listdir(src_dir)
 
-		# check if the x or y coord is out of bounds
-		if x<0 or x>=(self.width): 	return False 
-		if y<0 or y>=(self.height): return False 
+	# overall averages written to this file
+	overall_avgs_file = open(targ_dir+"overall-avg_score.txt","w")
 
-		# if we get here, we know coords are within bounds
-		return True
+	# file to hold all scores
+	all_scores_file = open(targ_dir+"all-scores.txt","w")
 
-	# action in set ["Up","Left","Down","Right"]
-	def move(self,action):
+	# totals for all trials on all grids
+	scores = [0] * 100
 
-		# get the current location
-		current_location = self.current_location
+	# total number of trials read
+	trials_read = 0
 
-		# set the proposed next location
-		if action=="Up": 	proposed_location = [current_location[0],current_location[1]-1]
-		if action=="Down": 	proposed_location = [current_location[0],current_location[1]+1]
-		if action=="Left": 	proposed_location = [current_location[0]-1,current_location[1]]
-		if action=="Right": proposed_location = [current_location[0]+1,current_location[1]]
+	for m in map_dirs:
+		# write out individual averages to this file
+		#cur_avgs_file = open(targ_dir+m+"-avg.txt","w")
 
-		# if the proposed move will bring us out of bounds
-		if not self.is_within_bounds(proposed_location[0],proposed_location[1]): 
-			return self.get_cell_value_estimate(current_location[0],current_location[1])
+		# current directory name
+		cur_dir = src_dir+m+"/"
 
-		# get a random integer from 1 to 10
-		action = random.randint(1,10)
+		# get items in map_x directory (mostly traversal_x dirs)
+		cur_dir_items = os.listdir(cur_dir)
 
-		# with 90% probability we should return the estimate of the new location conditions
-		if action<=9: return self.get_cell_value_estimate(proposed_location[0],proposed_location[1])
+		for c in cur_dir_items:
+			full_c = cur_dir+c
 
-		# with a 10% probability return estimate of current location conditions
-		return self.get_cell_value_estimate(current_location[0],current_location[1])
+			# check if the item is a directory
+			if os.path.isdir(full_c):
+				trials_read+=1
+				meta_loc = full_c+"/meta.txt"
+				if not os.path.exists(meta_loc):
+					print("\nERROR: Cannot locate "+meta_loc)
+					return
 
-# creates a new 3x3 prediction matrix given the provided conditions
-def create_prediction_matrix(values=["H","H","T","N","N","N","N","B","H"]):
-	matrix = []
-	for y in range(3):
-		row = []
-		for x in range(3):
-			value_idx = (3*y)+x 
-			if values[value_idx] is not "B":
-				row.append(float(1.0/8.0)) # 1/8 constant probability
-			else: # if the current location is a blocked cell
-				row.append(0.0)
-		matrix.append(row)
-	return matrix
+				# open current meta.txt file for reading
+				meta_f = open(meta_loc,"r")
 
-# desired_item_size: column width in characters
-#
-# prints out either a prediction or condition matrix
-def print_matrix(matrix,desired_item_size=20):
-	delim_line = ''.join("_" for _ in range(3*desired_item_size+10))
-	sys.stdout.write("\n"+delim_line+"\n")
-	for row in matrix:
-		sys.stdout.write("| ")
-		for item in row:
-			real_item_size = len(str(item))
-			sys.stdout.write(str(item)[:desired_item_size])
-			if real_item_size<desired_item_size:
-				for _ in range(desired_item_size-real_item_size):
-					sys.stdout.write(" ")
-					
-			if row.index(item) is not len(row)-1:
-				sys.stdout.write(" | ")
-			else:
-				sys.stdout.write(" |")
-		if matrix.index(row) is not len(matrix)-1:
-			sys.stdout.write("\n"+delim_line+"\n")
-		else:
-			sys.stdout.write("\n"+delim_line+"\n")
+				# split text into lines
+				text = meta_f.read()
+				lines = text.split("\n")
 
-# creates a new 3x3 condition matrix given the provided conditions
-def create_condition_matrix(values=["H","H","T","N","N","N","N","B","H"]):
-	matrix = []
-	for y in range(3):
-		row = []
-		for x in range(3):
-			value_idx = (3*y)+x 
-			row.append(values[value_idx])
-		matrix.append(row)
-	return matrix
+				# the index of the current score
+				score_idx = 0
 
-# prints out information about the current step, i.e. the current
-# condition matrix (doesn't change over steps), the current prediction
-# matrix (adjusted on each step), the current reported action, and the
-# current reported reading
-def print_current_state(condition_matrix=None,pred_matrix=None,move_index=0,cur_action=None,cur_reading=None,desired_item_size=20):
-	delim_line = ''.join("=" for _ in range(3*desired_item_size+10))
-	if move_index==0:
-		print("\n"+delim_line)
-		print("Initial State")
-	else:
-		print(delim_line)
-		print("\nMove Index:\t\t"+str(move_index))
-		print("Reported Action:\t("+str(cur_action)+", "+str(cur_reading)+")")
+				total_score = 0
 
-	if condition_matrix is not None:
-		sys.stdout.write("\nCondition Matrix:")
-		print_matrix(condition_matrix,5)
+				# iterate over each line of meta.txt looking for path score
+				for l in lines:
+					if l.find("Predicted Path Score")!=-1:
+						val = int(l.split(",")[0].split(": ")[1])
+						total_score+= val
+						scores[score_idx] += val
+						score_idx += 1
 
-	sys.stdout.write("\nPrediction Matrix")
-	print_matrix(pred_matrix,desired_item_size)
-	print("\n"+delim_line)
+				all_scores_file.write(m+" - "+c+" - score: \t"+str(total_score)+"\n")
 
-# returns the element-wise sum of the input 3x3 matrix
-def get_matrix_sum(matrix):
-	matrix_sum = 0
-	for y in range(3):
-		for x in range(3):
-			matrix_sum += float(matrix[y][x])
-	return matrix_sum
+				# close the meta.txt file
+				meta_f.close()
 
-# divides each elements of the input 3x3 matrix by its matrix sum
-def normalize_matrix(matrix):
-	matrix_sum = float(get_matrix_sum(matrix))
-	for y in range(3):
-		for x in range(3):
-			matrix[y][x] = float(matrix[y][x])/matrix_sum
-	return matrix
+	all_scores_file.close()
 
-# compute the probability of where we are in grid world given inputs 'actions' and 
-# subsequent sensor readings 'readings'
-def predict_location(actions,readings):
+	sys.stdout.write("writing file... ")
+	sys.stdout.flush()
 
-	condition_matrix = create_condition_matrix()
-	pred_matrix = create_prediction_matrix()
-	print_current_state(condition_matrix,pred_matrix)
+	# get average for each step
+	average_scores = []
+	for s in scores:
+		average_scores.append(float(s)/float(trials_read))
 
-	move_index = 1
-	for cur_action,cur_reading in zip(actions,readings):
+	# write out average scores
+	for a in average_scores:
+		overall_avgs_file.write(str(a))
+		overall_avgs_file.write("\n")
 
-		# set probabilities given the reported reading compared to state values
-		for y in range(3):
-			for x in range(3):
-				# never in this state
-				if condition_matrix[y][x]=="B": pred_matrix[y][x] = 0.0
+	# close the overall_avgs_file
+	overall_avgs_file.close()
 
-				# in this state with 0.9 confidence (same as reading)
-				elif condition_matrix[y][x]==cur_reading: pred_matrix[y][x] *= 0.9
-		
-				# in this state only if there was a mis-reading of the cur_reading
-				else: pred_matrix[y][x] *= 0.1
-		
-		# set probabilities given the reported movement (cur_action) compared to condition neighbors
-		#
-		# iterate over all possible current locations
-		for y in range(3):
-			for x in range(3):
+	sys.stdout.write("done.\n")
+	sys.stdout.flush()
 
-				# if the current location is a blocked cell, it will have already been set to P = 0.0
-				if condition_matrix[y][x]=="B": continue
+	# create plot of average scores
+	X = np.arange(1,len(average_scores)+1)
+	Y = np.array(average_scores)
 
-				# if the reported action was a translation to the right
-				if cur_action=="Right":
-					
-					# if the current location is in the middle or right columns
-					if x==1 or x==2: pred_matrix[y][x] *= 0.9
+	fig,ax = plt.subplots()
 
-					# if the current location is in the left column
-					if x==0:
-						# if a right translation could be prevented due to a blocked cell to the right
-						if condition_matrix[y][x+1]=="B": pred_matrix[y][x] *= 0.9
-						else: 							  pred_matrix[y][x] *= 0.1
+	ax.bar(X,Y,width=0.9,color='blue')
 
-				if cur_action=="Left":
-					if x==0 or x==1: pred_matrix[y][x] *= 0.9
-					if x==2:
-						if condition_matrix[y][x-1]=="B": pred_matrix[y][x] *= 0.9
-						else: 							  pred_matrix[y][x] *= 0.1
+	ax.set_xlabel("Iteration")
+	ax.set_ylabel("Average Score")
+	ax.set_title("Average Score, All 100 Experiments")
 
-				if cur_action=="Up":
-					if y==0 or y==1: pred_matrix[y][x] *= 0.9
-					if y==2:
-						if condition_matrix[y-1][x]=="B": pred_matrix[y][x] *= 0.9
-						else: 							  pred_matrix[y][x] *= 0.1
+	title_fontsize = 20
+	axis_label_fontsize = 20
 
-				if cur_action=="Down":
-					if y==1 or y==2: pred_matrix[y][x] *= 0.9
-					if y==0:
-						if condition_matrix[y+1][x]=="B": pred_matrix[y][x] *= 0.9
-						else:							  pred_matrix[y][x] *= 0.1
-				
-		# now need to normalize all values by dividing by probability sum
-		pred_matrix = normalize_matrix(pred_matrix)
+	ax.title.set_fontsize(title_fontsize)
+	ax.xaxis.label.set_fontsize(axis_label_fontsize)
+	ax.yaxis.label.set_fontsize(axis_label_fontsize)
 
-		# print out current state information
-		print_current_state(pred_matrix=pred_matrix,move_index=move_index,cur_action=cur_action,cur_reading=cur_reading)
+	plt.show()
 
-		move_index+=1
-"""
+	# return the list of averages
+	return average_scores
+
+def get_overall_correctness_probability(src_dir,targ_dir):
+	sys.stdout.write("\nCalculating correctness probability... ")
+	sys.stdout.flush()
+
+	if src_dir[-1]!="/": src_dir+="/" 
+	if targ_dir[-1]!="/": targ_dir+="/"
+
+	# create directory if not already existant
+	if not os.path.exists(targ_dir): os.makedirs(targ_dir)
+
+	# check to ensure src_dir exists
+	if not os.path.exists(src_dir):
+		print("\nERROR: src_dir does not exist!")
+		return
+
+	# get all map_x directory names
+	map_dirs = os.listdir(src_dir)
+
+	# overall averages written to this file
+	overall_avgs_file = open(targ_dir+"overall-correctness_probability.txt","w")
+
+	# totals for all trials on all grids
+	correct = [0] * 100
+
+	# total number of trials read
+	trials_read = 0
+
+	for m in map_dirs:
+
+		# current directory name
+		cur_dir = src_dir+m+"/"
+
+		# get items in map_x directory (mostly traversal_x dirs)
+		cur_dir_items = os.listdir(cur_dir)
+
+		for c in cur_dir_items:
+			full_c = cur_dir+c
+
+			# check if the item is a directory
+			if os.path.isdir(full_c):
+				trials_read+=1
+				meta_loc = full_c+"/meta.txt"
+				if not os.path.exists(meta_loc):
+					print("\nERROR: Cannot locate "+meta_loc)
+					return
+
+				# open current meta.txt file for reading
+				meta_f = open(meta_loc,"r")
+
+				# split text into lines
+				text = meta_f.read()
+				lines = text.split("\n")
+
+				# the index of the current score
+				score_idx = 0
+
+				# iterate over each line of meta.txt looking for path score
+				for l in lines:
+					if l.find("Predicted Path Score")!=-1:
+						val = int(l.split(",")[0].split(": ")[1])
+						if val==0: correct[score_idx]+=1
+						score_idx += 1
+
+				# close the meta.txt file
+				meta_f.close()
+
+	sys.stdout.write("writing file... ")
+	sys.stdout.flush()
+
+	# get average for each step
+	average_scores = []
+	for s in correct:
+		average_scores.append(float(s)/float(trials_read))
+
+	# write out average scores
+	for a in average_scores:
+		overall_avgs_file.write(str(a))
+		overall_avgs_file.write("\n")
+
+	# close the overall_avgs_file
+	overall_avgs_file.close()
+
+	sys.stdout.write("done.\n")
+	sys.stdout.flush()
+
+	# create plot of average scores
+	X = np.arange(1,len(average_scores)+1)
+	Y = np.array(average_scores)
+
+	fig,ax = plt.subplots()
+
+	ax.bar(X,Y,width=0.9,color='blue')
+
+	ax.set_xlabel("Iteration")
+	ax.set_ylabel("Correct Prediction Probability")
+	ax.set_title("Average Correct Prediction Probability, All 100 Experiments")
+
+	title_fontsize = 20
+	axis_label_fontsize = 20
+
+	ax.title.set_fontsize(title_fontsize)
+	ax.xaxis.label.set_fontsize(axis_label_fontsize)
+	ax.yaxis.label.set_fontsize(axis_label_fontsize)
+
+	plt.show()
+
+	# return the list of averages
+	return average_scores
+
+def get_most_recent_data_dir(parent_dir):
+	items = os.listdir(parent_dir)
+	most_recent_name = None
+	most_recent_secs = 0
+	for item in items:
+		if os.path.isdir(parent_dir+"/"+item) and item.find("exec_data")!=-1:
+			secs = int(item.split("-")[1])
+			if secs>most_recent_secs:
+				most_recent_secs = secs
+				most_recent_name = item
+	if most_recent_name==None:
+		print("ERROR: Must first generate data, none found.")
+	return most_recent_name
+
+def organize_all_by_type(src_dir,targ_dir,ext=".gif"):
+	sys.stdout.write("\nCopying all "+ext+" to targ_dir... ")
+	if src_dir[-1]!="/": src_dir+="/" 
+	if targ_dir[-1]!="/": targ_dir+="/"
+
+	if not os.path.exists(targ_dir): os.makedirs(targ_dir)
+	map_dirs = os.listdir(src_dir)
+	num=0
+	for m_d in map_dirs:
+		if os.path.isdir(src_dir+m_d):
+			trav_dirs = os.listdir(src_dir+m_d)
+			for t_d in trav_dirs:
+				if os.path.isdir(src_dir+m_d+"/"+t_d):
+					data_files = os.listdir(src_dir+m_d+"/"+t_d)
+					for d in data_files:
+						if d.find(ext)!=-1:
+							targ_f = targ_dir+m_d+"-"+t_d+ext
+							shutil.copyfile(src_dir+m_d+"/"+t_d+"/"+d,targ_f)
+							num+=1
+							sys.stdout.write("\rCopying all "+ext+" to targ_dir... "+str(num)+"       ")
+	sys.stdout.write("\nDone\n")
+
+def organize_all_likely_traj(src_dir,targ_dir):
+	sys.stdout.write("\nCopying all likely trajectory pngs... ")
+	if src_dir[-1]!="/": src_dir+="/" 
+	if targ_dir[-1]!="/": targ_dir+="/"
+
+	if not os.path.exists(targ_dir): os.makedirs(targ_dir)
+	map_dirs = os.listdir(src_dir)
+	num=0
+	for m_d in map_dirs:
+		if os.path.isdir(src_dir+m_d):
+			trav_dirs = os.listdir(src_dir+m_d)
+			for t_d in trav_dirs:
+				if os.path.isdir(src_dir+m_d+"/"+t_d):
+					data_files = os.listdir(src_dir+m_d+"/"+t_d)
+					for d in data_files:
+
+						if d.find(".png")!=-1 and d.find("likely_trajectories")!=-1:
+							targ_f = targ_dir+m_d+"-"+t_d+"-"+d 
+							shutil.copyfile(src_dir+m_d+"/"+t_d+"/"+d,targ_f)
+							num+=1
+							sys.stdout.write("\rCopying all likely trajectory pngs... "+str(num)+"     ")
+	sys.stdout.write("\nDone\n")
 
 
 def main():
-	actions = ["Right","Right","Down","Down"]
-	readings = ["N","N","H","H"]
 
-	#actions = ["Right","Down","Down","Down","Down"]
-	#readings = ["N","H","H","H","H"]
+	parent_dir = "../Question_D"
+	src_dir = parent_dir+"/"+get_most_recent_data_dir(parent_dir)
+	targ_dir = "cleaned_data/"
 
-	predict_location(actions,readings)
+	plots = False
+	if plots:
+		# get and plot overall average scores at each iteration (all maps/traversals)
+		avgs = get_overall_average_score(src_dir,targ_dir)
+
+		# get and plot overall average probability of correct prediction at each iteration (all maps/travs)
+		probs = get_overall_correctness_probability(src_dir,targ_dir)
+
+	organize_gifs = False 
+	if organize_gifs:
+		# copy all gifs from src_dir into a separate folder 
+		organize_all_by_type(src_dir,targ_dir+"/all_gifs/",".gif")
+
+	organize_likely_traj = True 
+	if organize_likely_traj:
+		# copy all prediction-likely_trajectories-xxx.png files to separate folder 
+		organize_all_likely_traj(src_dir,targ_dir+"/all_likely_traj/")
+
 
 if __name__ == '__main__':
 	main()

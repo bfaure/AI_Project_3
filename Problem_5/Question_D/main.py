@@ -31,25 +31,48 @@ else:
 
 from helpers import viterbi_matrix,viterbi_node, make_gif, create_png
 
-def get_traversal_sequence(src_txt):
-	f = open(src_txt,"r")
-	lines = f.read().split("          0")[0].split("\n")
-	seq = []
-	for l in lines:
-		if l not in [""," ","  "]:
-			items = l.split(" ")
-			#print items
-			for i in items:
-				if i in [""," ","  "]: continue
-				x,y = i.split(",")
-				x = int(x[1:])
-				y = int(y[:-1])
-				seq.append([x,y])
-				if len(seq)==100:
-					f.close()
-					return seq
-	f.close()
-	return seq
+def get_traversal_sequence(src_txt,first=False):
+	if not first:	
+		f = open(src_txt,"r")
+		lines = f.read().split("          0")[0].split("\n")
+		seq = []
+		for l in lines:
+			if l not in [""," ","  "]:
+				items = l.split(" ")
+				#print items
+				for i in items:
+					if i in [""," ","  "]: continue
+					x,y = i.split(",")
+					x = int(x[1:])
+					y = int(y[:-1])
+					seq.append([x,y])
+					if len(seq)==100:
+						f.close()
+						return seq
+		f.close()
+		return seq
+	else:
+
+		f = open(src_txt,"r")
+		regions = f.read().split("~~~")[1:]
+		seq = []
+		for region in regions:
+			items =  region.split("Sequence Probability: ")[1]
+			#traj_probs.append(items.split("\n")[0][:6])
+			lines = items.split("\n")[1:]
+			for l in lines:
+				if l.find("          0")!=-1: break
+				if l in [""," ","  "]: continue
+				elems = l.split(" ")
+				for i in elems:
+					if i in [""," ","  "]: continue
+					x,y = i.split(",")
+					x = int(x[1:])
+					y = int(y[:-1])
+					seq.append([x,y])
+			break 
+		f.close()
+		return seq
 
 def get_most_recent_data_dir():
 	items = os.listdir(".")
@@ -182,6 +205,12 @@ def create_likely_trajectories_pic(src_txt,targ_png,conditions_matrix,dpi=750):
 	fig.savefig(targ_png,bbox_inches='tight',dpi=dpi)
 	plt.close()
 
+def get_sequence_score(actual,predicted):
+	score = []
+	for a,p in zip(actual,predicted):
+		score.append(abs(a[0]-p[0])+abs(a[1]-p[1]))
+	return score
+
 def main():
 	# generate execution data given data in Question_C folder
 	regenerate_data = False
@@ -192,8 +221,8 @@ def main():
 		src_dir      = "../Question_C/data/"
 		runtime_code = str(int(time.time()))
 
-		num_grid_files      = 10
-		traversals_per_file = 10
+		num_grid_files      = 1
+		traversals_per_file = 1
 		grid_width          = 100
 		grid_height         = 100
 		overall_total_score = 0
@@ -220,7 +249,7 @@ def main():
 		print("\nDone. Total time: "+str(end_time-start_time)[:7]+" seconds")
 		print("Overall total score: "+str(overall_total_score)+"\n")
 
-	generate_pngs_and_gifs = True
+	generate_pngs_and_gifs = False 
 	just_likely_traversals = True
 
 	# generate gifs and pngs for the data
@@ -278,8 +307,60 @@ def main():
 		sys.stdout.write("\nDone. Total time: "+str(time.time()-start_time)[:7]+" seconds\n\n")
 		sys.stdout.flush()
 
+	# calculate scores for the final trajectories for all maps 
+	score_trajectories = True 
+	if score_trajectories:
+		f = open("traj_100_scores.txt","w")
+
+		scores 		= [0] * 100
+		num_counted = 0
+
+		sys.stdout.write("Calculating final trajectory scores... ")
+		sys.stdout.flush()
+		src = get_most_recent_data_dir()+"/"
+		map_dirs = os.listdir(src)
+
+		for m in map_dirs:
+			if os.path.isdir(src+m):
+				trav_dirs = os.listdir(src+m)
+				for t in trav_dirs:
+					if os.path.isdir(src+m+"/"+t):
+						data_files = os.listdir(src+m+"/"+t)
+
+						score = None 
+
+						# parse out the actual traversal sequence and the current condition matrix
+						for d in data_files:
+							if d.find("actual_traversal_sequence")!=-1:
+								actual_traversal_sequence = get_traversal_sequence(src+m+"/"+t+"/"+d)
+								break
+
+
+						for d in data_files:
+							if d.find("likely_trajectories-100.txt")!=-1:
+								predicted_traversal_sequence = get_traversal_sequence(src+m+"/"+t+"/"+d,first=True)
+								score = get_sequence_score(actual_traversal_sequence,predicted_traversal_sequence)
+								break 
+
+						if score is not None:
+							for i in range(100):
+								scores[i] += score[i]
+							num_counted+=1
+						else:
+							print("ERROR: here")
+
+		for i in range(100):
+			scores[i] = ( float(scores[i]) / float(num_counted))
+			f.write("%0.5f\n"%scores[i])
+
+		f.close()
+		print("Done")
+		print("Number counted: "+str(num_counted))
+
 	#dir_name = "exec_data-"+runtime_code
 	#os.rename(dir_name,dir_name+"-(complete)")
 
 if __name__ == '__main__':
 	main()
+
+

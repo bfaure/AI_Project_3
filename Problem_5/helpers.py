@@ -20,7 +20,7 @@ import threading
 
 map_name = ""
 traversal_name = ""
-save_base = ""
+save_base = "" 
 png_managers = []
 started_png_managers = 0
 
@@ -297,13 +297,7 @@ class viterbi_matrix:
 		os.makedirs(path_items[0]+"/"+path_items[1]+"/"+path_items[2])
 		self.save_base = save_dir+"/"
 
-	# loads in an observation file (.txt)
-	# if buffer_size=None then none of the original conditions_matrix will be trimmed, if
-	# buffer_size is a positive integer then we will find the outer bounds of the actual
-	# traversal path and add buffer_size to those bounds, translate the actual traversal path
-	# accordingly and trim the conditions_matrix down to said bounds (the conditions_matrices are
-	# originally 500x500 but the agent rarely makes if very far to justify that large of a search
-	# space) - see self.adjust_environment_bounds()
+	# loads in observations
 	def load_observations(self,observation_path,grid_width=-1,grid_height=-1,path=False,method="default",save_dir=None,print_nothing=True):
 
 		# set up directory to save data to
@@ -328,9 +322,9 @@ class viterbi_matrix:
 		self.queued_actions  = [] # filled with all initial actions (loaded from file)
 		self.queued_readings = [] # filled with all initial readings (loaded from file)
 
-		self.start_location = None
-		self.show_all       = False
-		current_item_type   = None
+		self.start_location 	= None
+		self.print_prediction   = True
+		current_item_type   	= None
 
 		for line in lines:
 			if line.find("start_location")!=-1:
@@ -858,8 +852,7 @@ class viterbi_matrix:
 					# figure out which parent has the highest transition probability
 					#best_parent_transition = 0.0
 
-					'''
-					# figure out which is the best parent
+					# figure out which is the best parent and set it
 					best_parent_prob = 0.0
 
 					for i in range(len(transition_matrix[y][x].parents)):
@@ -869,8 +862,7 @@ class viterbi_matrix:
 						if (cur_val*cur_parent.value)>best_parent_prob:
 							best_parent_prob = cur_val*cur_parent.value
 							transition_matrix[y][x].parent = cur_parent
-					'''
-
+					
 					anc_prob_total = 0.0 # sum of P(x)*T(x) for all parents x
 
 					# get the entire ancestor tree probability for this location
@@ -897,8 +889,8 @@ class viterbi_matrix:
 		return False # ancestor is open
 
 	# returns the [x,y] of cell in the opposite of 'direction' if fwd is True,
-	# otherwise returns the [x,y] of cell in 'direction'
-	def get_adjusted_coord(self,x,y,direction,fwd=True):
+	# otherwise returns the [x,y] of cell in 'direction' # fwd should be True
+	def get_adjusted_coord(self,x,y,direction,fwd=False):
 		if fwd:
 			x1,y1 = x,y
 			if direction in ["Left","L"]: 	x1+=  1
@@ -965,18 +957,18 @@ class viterbi_matrix:
 	# initializes the prediction matrix, iterates over provided observations
 	# and updates weights at each step. If path is set to True the viterbi algorithm
 	# will be called to analyze each step and output the most likely path taken
-	def init_observations(self,seen_actions,seen_readings,path=True,print_transition=True,print_condition=True):
+	def init_observations(self,seen_actions,seen_readings,path=False,print_ancestors=False,print_condition=True):
 
-		self.show_all = False
-		self.print_ancestors = True
-		self.print_transition = print_transition
-		self.print_condition = print_condition
+		# set global variables to assign execution state values
+		self.print_prediction = True  			 #
+		self.print_ancestors  = print_ancestors
+		self.print_condition  = print_condition
 
 		#self.transition_matrices = []
 		self.init_conditions_matrix()
 
-		self.observed_actions = []
-		self.observed_readings = []
+		self.observed_actions  = [] # filled in add_observation
+		self.observed_readings = [] # ""
 
 		if not path:
 			sys.stdout.write("\nGrid Conditions...\n")
@@ -1559,10 +1551,10 @@ class viterbi_matrix:
 
 		delim_line = ''.join("=" for _ in range((self.num_cols+5)*(desired_item_size)))
 		if self.move_index==1:
-			print("\n"+delim_line+"\n"+delim_line)
+			print("\n"+delim_line+"\n")#+delim_line)
 			print(" Initial State")
 		else:
-			print("\n"+delim_line+"\n"+delim_line)
+			print("\n"+delim_line+"\n")#+delim_line)
 			print(" Move Index:\t\t"+str(self.move_index-1))
 			print(" Reported Action:\t("+str(self.cur_action)+", "+str(self.cur_reading)+")")
 
@@ -1573,17 +1565,11 @@ class viterbi_matrix:
 		if len(self.prediction_matrices)!=0 and self.print_ancestors:
 			self.print_anc_info()
 
-		'''
-		if len(#self.transition_matrices)!=0 and self.print_transition:
-			sys.stdout.write("\n Transition Matrix:\n")
-			self.print_matrix(#self.transition_matrices[-1],desired_item_size)
-		'''
-
 		if self.temp_anc_matrix is not None and self.display_temp_ancestor_matrix:
 			print("\n Ancestors Matrix: ")
 			self.print_matrix(self.temp_anc_matrix,desired_item_size)
 
-		if pred_matrix is not None and not self.show_all:
+		if pred_matrix is not None and self.print_prediction:
 			sys.stdout.write("\n\n Current Probability Matrix:\n")
 			self.print_matrix(pred_matrix,desired_item_size)
 
