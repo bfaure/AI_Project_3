@@ -1,287 +1,367 @@
 import sys
 import time
 import random
-
+import os
 from copy import deepcopy, copy
+import imageio
+import threading
+import signal
+import matplotlib
+matplotlib.use('Agg')
+from matplotlib import pyplot as plt
+from matplotlib import cm
+from matplotlib import mlab as ml
+from matplotlib import colors
+import numpy as np
+import Cython, subprocess
+import shutil, filecmp
 
-sys.path.append("..")
-from helpers import viterbi_matrix, viterbi_node
+use_cython = False
 
-"""
-class grid(object):
-	def __init__(self,width=3,height=3):
-		self.width = width
-		self.height = height
-		self.init_cells()
-		self.init_current_location()
 
-	# initializes the list of cells and cell values
-	def init_cells(self):
-		self.cells = []
-
-		default = True 
-		if default:
-			self.cells = ["H","H","T","N","N","N","N","B","H"]
-			return 
-
-	# initialize the current location member variable, chooses among non-blocked cells
-	def init_current_location(self):
-		while True:
-			# get a possible x starting location
-			attempted_x = random.randint(1,self.width)
-			# get a possible y starting location
-			attempted_y = random.randint(1,self.height)
-			# if the spot isnt blocked, break
-			if self.get_cell_value(attempted_x,attempted_y) is not "B": break
-		# set the current location
-		self.current_location = [attempted_x,attempted_y]
-
-	# if zero==False:
-	# x: [1,2,3,...,self.width]
-	# y: [1,2,3,...,self.height]
-	# else:
-	# x: [0,1,2,...,self.width-1]
-	# y: [0,1,2,...,self.height-1]
-	def get_cell_value(self,x,y,zero=False):
-		# adjust the coords if not starting at zero
-		if not zero:
-			x += -1
-			y += -1
-		return self.cells[(self.width*y)+x]
-
-	# if zero==False:
-	# x: [1,2,3,...,self.width]
-	# y: [1,2,3,...,self.height]
-	# else:
-	# x: [0,1,2,...,self.width-1]
-	# y: [0,1,2,...,self.height-1]
-	def get_cell_value_estimate(self,x,y,zero=False):
-		# all possible cell values
-		possible_values = ["N","H","T"]
-		# get the actual cell value (from set 'possible_values')
-		real_value = self.get_cell_value(x,y,zero)
-		# remove the actual value from the list of possible fake values
-		del possible_values[possible_values.index(real_value)]
-		# get a random integer from 1 to 100
-		action = random.randint(1,100)
-		# return the real value
-		if action<=90: return real_value
-		# return a fake value
-		return random.choice(possible_values)
-
-	# if zero==False:
-	# x: [1,2,3,...,self.width]
-	# y: [1,2,3,...,self.height]
-	# else:
-	# x: [0,1,2,...,self.width-1]
-	# y: [0,1,2,...,self.height-1]
-	# 
-	# checks if the input coordinates [x,y] are within the bounds stated above
-	def is_within_bounds(self,x,y,zero=False):
-		# adjust the coords if not starting at zero
-		if not zero:
-			x += -1
-			y += -1
-
-		# check if the x or y coord is out of bounds
-		if x<0 or x>=(self.width): 	return False 
-		if y<0 or y>=(self.height): return False 
-
-		# if we get here, we know coords are within bounds
-		return True
-
-	# action in set ["Up","Left","Down","Right"]
-	def move(self,action):
-
-		# get the current location
-		current_location = self.current_location
-
-		# set the proposed next location
-		if action=="Up": 	proposed_location = [current_location[0],current_location[1]-1]
-		if action=="Down": 	proposed_location = [current_location[0],current_location[1]+1]
-		if action=="Left": 	proposed_location = [current_location[0]-1,current_location[1]]
-		if action=="Right": proposed_location = [current_location[0]+1,current_location[1]]
-
-		# if the proposed move will bring us out of bounds
-		if not self.is_within_bounds(proposed_location[0],proposed_location[1]): 
-			return self.get_cell_value_estimate(current_location[0],current_location[1])
-
-		# get a random integer from 1 to 10
-		action = random.randint(1,10)
-
-		# with 90% probability we should return the estimate of the new location conditions
-		if action<=9: return self.get_cell_value_estimate(proposed_location[0],proposed_location[1])
-
-		# with a 10% probability return estimate of current location conditions
-		return self.get_cell_value_estimate(current_location[0],current_location[1])
-
-# creates a new 3x3 prediction matrix given the provided conditions
-def create_prediction_matrix(values=["H","H","T","N","N","N","N","B","H"]):
-	matrix = []
-	for y in range(3):
-		row = []
-		for x in range(3):
-			value_idx = (3*y)+x 
-			if values[value_idx] is not "B":
-				row.append(float(1.0/8.0)) # 1/8 constant probability
-			else: # if the current location is a blocked cell
-				row.append(0.0)
-		matrix.append(row)
-	return matrix
-
-# desired_item_size: column width in characters
-#
-# prints out either a prediction or condition matrix
-def print_matrix(matrix,desired_item_size=20):
-	delim_line = ''.join("_" for _ in range(3*desired_item_size+10))
-	sys.stdout.write("\n"+delim_line+"\n")
-	for row in matrix:
-		sys.stdout.write("| ")
-		for item in row:
-			real_item_size = len(str(item))
-			sys.stdout.write(str(item)[:desired_item_size])
-			if real_item_size<desired_item_size:
-				for _ in range(desired_item_size-real_item_size):
-					sys.stdout.write(" ")
-					
-			if row.index(item) is not len(row)-1:
-				sys.stdout.write(" | ")
-			else:
-				sys.stdout.write(" |")
-		if matrix.index(row) is not len(matrix)-1:
-			sys.stdout.write("\n"+delim_line+"\n")
-		else:
-			sys.stdout.write("\n"+delim_line+"\n")
-
-# creates a new 3x3 condition matrix given the provided conditions
-def create_condition_matrix(values=["H","H","T","N","N","N","N","B","H"]):
-	matrix = []
-	for y in range(3):
-		row = []
-		for x in range(3):
-			value_idx = (3*y)+x 
-			row.append(values[value_idx])
-		matrix.append(row)
-	return matrix
-
-# prints out information about the current step, i.e. the current
-# condition matrix (doesn't change over steps), the current prediction
-# matrix (adjusted on each step), the current reported action, and the
-# current reported reading
-def print_current_state(condition_matrix=None,pred_matrix=None,move_index=0,cur_action=None,cur_reading=None,desired_item_size=20):
-	delim_line = ''.join("=" for _ in range(3*desired_item_size+10))
-	if move_index==0:
-		print("\n"+delim_line)
-		print("Initial State")
+if use_cython:
+	if os.path.exists("helpers.pyx"):
+		if filecmp.cmp("../helpers.py","helpers.pyx")==False: # if they are not the same already
+			shutil.copyfile("../helpers.py","helpers.pyx")
 	else:
-		print(delim_line)
-		print("\nMove Index:\t\t"+str(move_index))
-		print("Reported Action:\t("+str(cur_action)+", "+str(cur_reading)+")")
+		shutil.copyfile("../helpers.py","helpers.pyx")
 
-	if condition_matrix is not None:
-		sys.stdout.write("\nCondition Matrix:")
-		print_matrix(condition_matrix,5)
+	val = subprocess.Popen('python setup.py build_ext --inplace',shell=True).wait()
+else:
+	sys.path.insert(0,"..")
 
-	sys.stdout.write("\nPrediction Matrix")
-	print_matrix(pred_matrix,desired_item_size)
-	print("\n"+delim_line)
+from helpers import viterbi_matrix,viterbi_node, make_gif, create_png
 
-# returns the element-wise sum of the input 3x3 matrix
-def get_matrix_sum(matrix):
-	matrix_sum = 0
-	for y in range(3):
-		for x in range(3):
-			matrix_sum += float(matrix[y][x])
-	return matrix_sum
+def get_traversal_sequence(src_txt,first=False):
+	if not first:	
+		f = open(src_txt,"r")
+		lines = f.read().split("          0")[0].split("\n")
+		seq = []
+		for l in lines:
+			if l not in [""," ","  "]:
+				items = l.split(" ")
+				#print items
+				for i in items:
+					if i in [""," ","  "]: continue
+					x,y = i.split(",")
+					x = int(x[1:])
+					y = int(y[:-1])
+					seq.append([x,y])
+					if len(seq)==100:
+						f.close()
+						return seq
+		f.close()
+		return seq
+	else:
 
-# divides each elements of the input 3x3 matrix by its matrix sum
-def normalize_matrix(matrix):
-	matrix_sum = float(get_matrix_sum(matrix))
-	for y in range(3):
-		for x in range(3):
-			matrix[y][x] = float(matrix[y][x])/matrix_sum
-	return matrix
+		f = open(src_txt,"r")
+		regions = f.read().split("~~~")[1:]
+		seq = []
+		for region in regions:
+			items =  region.split("Sequence Probability: ")[1]
+			#traj_probs.append(items.split("\n")[0][:6])
+			lines = items.split("\n")[1:]
+			for l in lines:
+				if l.find("          0")!=-1: break
+				if l in [""," ","  "]: continue
+				elems = l.split(" ")
+				for i in elems:
+					if i in [""," ","  "]: continue
+					x,y = i.split(",")
+					x = int(x[1:])
+					y = int(y[:-1])
+					seq.append([x,y])
+			break 
+		f.close()
+		return seq
 
-# compute the probability of where we are in grid world given inputs 'actions' and 
-# subsequent sensor readings 'readings'
-def predict_location(actions,readings):
+def get_most_recent_data_dir():
+	items = os.listdir(".")
 
-	condition_matrix = create_condition_matrix()
-	pred_matrix = create_prediction_matrix()
-	print_current_state(condition_matrix,pred_matrix)
+	most_recent_name = None
+	most_recent_secs = 0
 
-	move_index = 1
-	for cur_action,cur_reading in zip(actions,readings):
+	for item in items:
+		if os.path.isdir(item):
+			if item.find("exec_data")!=-1:
+				secs = int(item.split("-")[1])
+				if secs>most_recent_secs:
+					most_recent_secs = secs
+					most_recent_name = item
 
-		# set probabilities given the reported reading compared to state values
-		for y in range(3):
-			for x in range(3):
-				# never in this state
-				if condition_matrix[y][x]=="B": pred_matrix[y][x] = 0.0
+	if most_recent_name==None:
+		print("ERROR: Must first generate data, none found.")
+	return most_recent_name
 
-				# in this state with 0.9 confidence (same as reading)
-				elif condition_matrix[y][x]==cur_reading: pred_matrix[y][x] *= 0.9
-		
-				# in this state only if there was a mis-reading of the cur_reading
-				else: pred_matrix[y][x] *= 0.1
-		
-		# set probabilities given the reported movement (cur_action) compared to condition neighbors
-		#
-		# iterate over all possible current locations
-		for y in range(3):
-			for x in range(3):
+# parses a txt file to re-create the matrix in 2D list form
+def resurrect_condition_matrix(src_txt):
+	f = open(src_txt,"r")
+	lines = f.read().split("          0")[1].split("\n")
+	m = []
+	for l in lines:
+		if l.find("|")==-1: continue
+		if l.split("|")[0]=="     ": continue
+		l = l.replace(">"," ").replace("<"," ").replace("-"," ")
+		row = []
+		elems = l.split("|")[1].split(" ")
+		for e in elems:
+			if e not in ["N","H","T","B"]: continue
+			#if len(e)
 
-				# if the current location is a blocked cell, it will have already been set to P = 0.0
-				if condition_matrix[y][x]=="B": continue
+			row.append(e.strip())
+		if len(row)>0: m.append(row)
+	f.close()
+	return m
 
-				# if the reported action was a translation to the right
-				if cur_action=="Right":
-					
-					# if the current location is in the middle or right columns
-					if x==1 or x==2: pred_matrix[y][x] *= 0.9
+def get_bounding_rect(x_set,y_set):
+	x0,y0,x1,y1 = 1000,1000,0,0
+	for xs,ys in zip(x_set,y_set):
+		min_x = min(xs)
+		max_x = max(xs)
+		min_y = min(ys)
+		max_y = max(ys)
 
-					# if the current location is in the left column
-					if x==0:
-						# if a right translation could be prevented due to a blocked cell to the right
-						if condition_matrix[y][x+1]=="B": pred_matrix[y][x] *= 0.9
-						else: 							  pred_matrix[y][x] *= 0.1
+		if min_x<x0: x0 = min_x 
+		if max_x>x1: x1 = max_x 
+		if min_y<y0: y0 = min_y  
+		if max_y>y1: y1 = max_y 
 
-				if cur_action=="Left":
-					if x==0 or x==1: pred_matrix[y][x] *= 0.9
-					if x==2:
-						if condition_matrix[y][x-1]=="B": pred_matrix[y][x] *= 0.9
-						else: 							  pred_matrix[y][x] *= 0.1
+	return x0,y0,x1,y1
 
-				if cur_action=="Up":
-					if y==0 or y==1: pred_matrix[y][x] *= 0.9
-					if y==2:
-						if condition_matrix[y-1][x]=="B": pred_matrix[y][x] *= 0.9
-						else: 							  pred_matrix[y][x] *= 0.1
+def create_likely_trajectories_pic(src_txt,targ_png,conditions_matrix,dpi=750):
+	f = open(src_txt)
+	regions = f.read().split("~~~")[1:]
 
-				if cur_action=="Down":
-					if y==1 or y==2: pred_matrix[y][x] *= 0.9
-					if y==0:
-						if condition_matrix[y+1][x]=="B": pred_matrix[y][x] *= 0.9
-						else:							  pred_matrix[y][x] *= 0.1
-				
-		# now need to normalize all values by dividing by probability sum
-		pred_matrix = normalize_matrix(pred_matrix)
+	traj_probs = [] # probability for each trajectory
 
-		# print out current state information
-		print_current_state(pred_matrix=pred_matrix,move_index=move_index,cur_action=cur_action,cur_reading=cur_reading)
+	traj_x = [] # x coordinates
+	traj_y = [] # y coordinates
 
-		move_index+=1
-"""
+	for region in regions:
+		items =  region.split("Sequence Probability: ")[1]
+		traj_probs.append(items.split("\n")[0][:6])
+		seq_x = []
+		seq_y = []
+		lines = items.split("\n")[1:]
+		for l in lines:
+			if l.find("          0")!=-1: break
+			if l in [""," ","  "]: continue
+			elems = l.split(" ")
+			for i in elems:
+				if i in [""," ","  "]: continue
+				x,y = i.split(",")
+				x = int(x[1:])
+				y = int(y[:-1])
+				seq_x.append(x)
+				seq_y.append(y)
+		traj_x.append(seq_x)
+		traj_y.append(seq_y)
 
+	# variables used to store the bounding box of all sequences
+	#x0,y0,x1,y1 = get_bounding_rect(traj_x,traj_y)
+
+	iteration = targ_png.split("/")[-1].split("-")[2].split(".")[0]
+	#iteration = src_txt.split("-")[2].split(".")[0]
+
+	png_title = targ_png.split("/")[1]+" | "+targ_png.split("/")[2]+" | "
+	png_title += "Iteration "+iteration
+
+	fig,ax = plt.subplots()
+	title = fig.suptitle(png_title,fontsize=10,y=0.99)
+	#title.set_position()
+
+	ax.set_xlabel("X Coordinate",fontsize=8)
+	ax.set_ylabel("Y Coordinate",fontsize=8)
+
+	for y in range(len(conditions_matrix)):
+		for x in range(len(conditions_matrix[y])):
+			ax.annotate(conditions_matrix[y][x],xy=(x-0.4,y-0.5),fontsize=3)
+
+	line_handles = []
+
+	# plot the 9 less likely sequences
+	i=1
+	for seq_x,seq_y in zip(reversed(traj_x[1:]),reversed(traj_y[1:])):
+		line_label = str(traj_probs[i])
+		line = ax.plot(seq_x,seq_y,lw=2,label=line_label)#,alpha=1.0-(float(i)/15))
+		i+=1
+
+	# plot the highest probability sequence in diff color
+	line = ax.plot(traj_x[0],traj_y[0],lw=2.0,label=traj_probs[0])
+
+	plt.legend(fontsize=6, bbox_to_anchor=(1.05,1),loc=2,borderaxespad=0.)
+
+	#plt.xlim([x0-4,x1+4])
+	#plt.ylim([y0-4,y1+4])
+
+	#plt.xticks(range(x0,x1,2),fontsize=4)
+	#plt.yticks(range(y0,y1,2),fontsize=4)
+
+	plt.xlim([0,len(conditions_matrix[0])])
+	plt.ylim([0,len(conditions_matrix)])
+
+	plt.xticks(range(0,len(conditions_matrix[0]),5),fontsize=4)
+	plt.yticks(range(0,len(conditions_matrix),5),fontsize=4)
+
+	fig.savefig(targ_png,bbox_inches='tight',dpi=dpi)
+	plt.close()
+
+def get_sequence_score(actual,predicted):
+	score = []
+	for a,p in zip(actual,predicted):
+		score.append(abs(a[0]-p[0])+abs(a[1]-p[1]))
+	return score
 
 def main():
-	actions = ["Right","Right","Down","Down"]
-	readings = ["N","N","H","H"]
+	# generate execution data given data in Question_C folder
+	regenerate_data = True
+	if regenerate_data:
+		print("--> Generating data...\n")
 
-	#actions = ["Right","Down","Down","Down","Down"]
-	#readings = ["N","H","H","H","H"]
+		start_time   = time.time()
+		src_dir      = "../Question_C/data/"
+		runtime_code = str(int(time.time()))
 
-	predict_location(actions,readings)
+		num_grid_files      = 1
+		traversals_per_file = 1
+		grid_width          = 300
+		grid_height         = 300
+		overall_total_score = 0
+
+		for grid_idx in range(num_grid_files):
+			map_dir = src_dir+"map_"+str(grid_idx)+"/"
+			tsv     = map_dir+"grid_"+str(grid_idx)+".tsv"
+			v       = viterbi_matrix(load_path=tsv)
+			total_score = 0
+			for trav_idx in range(traversals_per_file):
+				trav_file   = map_dir+"traversal_"+str(trav_idx)+".txt"
+				save_dir    = "exec_data-"+runtime_code+"/map_"+str(grid_idx)+"/traversal_"+str(trav_idx)
+				total_score += v.load_observations(trav_file,grid_width=grid_width,grid_height=grid_height,path=True,save_dir=save_dir,print_nothing=True)
+				if trav_idx !=traversals_per_file-1: v.reload_conditions_matrix() # reset weights / bounds
+
+			data_file = open("exec_data-"+runtime_code+"/map_"+str(grid_idx)+"/meta.txt","w")
+			data_file.write("Total Score: "+str(total_score)+"\n")
+			data_file.write("Grid Width: "+str(grid_width)+"\n")
+			data_file.write("Grid Height: "+str(grid_height)+"\n")
+			data_file.close()
+			overall_total_score+=total_score
+
+		end_time = time.time()
+		print("\nDone. Total time: "+str(end_time-start_time)[:7]+" seconds")
+		print("Overall total score: "+str(overall_total_score)+"\n")
+
+	generate_pngs_and_gifs = False 
+	just_likely_traversals = True
+
+	# generate gifs and pngs for the data
+	if generate_pngs_and_gifs:
+		print("--> Generating images...\n")
+		start_time = time.time()
+
+		num_png  = 0
+		num_gif  = 0
+		num_traj = 0
+		dpi      = 200
+
+		sys.stdout.write("Generating .png and .gif files... ")
+		sys.stdout.flush()
+		src = get_most_recent_data_dir()+"/"
+		map_dirs = os.listdir(src)
+		for m in map_dirs:
+			if os.path.isdir(src+m):
+				trav_dirs 	    = os.listdir(src+m)
+				for t in trav_dirs:
+					if os.path.isdir(src+m+"/"+t):
+						sys.stdout.write("\r"+m+" - "+t+"                                                                        \n")
+						sys.stdout.flush()
+						data_files = os.listdir(src+m+"/"+t)
+
+						# parse out the actual traversal sequence and the current condition matrix
+						for d in data_files:
+							if d.find("actual_traversal_sequence")!=-1:
+								actual_traversal_sequence = get_traversal_sequence(src+m+"/"+t+"/"+d)
+								cur_cond_matrix 		  = resurrect_condition_matrix(src+m+"/"+t+"/"+d)
+								break
+
+						# create pngs for the 10 most likely sequences (taken at 10, 50, 100 iterations)
+						for d in data_files:
+							if d.find("likely_trajectories")!=-1 and d.find(".txt")!=-1:
+								traj_f = d.split(".")[0]+".png"
+								create_likely_trajectories_pic( src+m+"/"+t+"/"+d , src+m+"/"+t+"/"+traj_f ,cur_cond_matrix )
+								num_traj+=1
+
+
+						# create a new png for each prediction float matrix
+						for d in data_files:
+							if d.find("prediction-floats")!=-1:
+								idx = d.split(".")[0].split("-")[2]
+								trav_so_far = actual_traversal_sequence[:int(idx)]
+								if not just_likely_traversals: create_png(src+m+"/"+t+"/"+d,src+m+"/"+t+"/"+"prediction-heatmap-"+idx+".png",trav_so_far,dpi)
+								num_png+=1
+								sys.stdout.write("\rGenerating .png and .gif files... GIF: "+str(num_gif)+", PNG: "+str(num_png)+", Trajectories (PNG): "+str(num_traj)+"          ")
+								sys.stdout.flush()
+
+						# generate a gif from the newly created .png files
+						if not just_likely_traversals: make_gif(src+m+"/"+t)
+						num_gif+=1
+
+		sys.stdout.write("\nDone. Total time: "+str(time.time()-start_time)[:7]+" seconds\n\n")
+		sys.stdout.flush()
+
+	# calculate scores for the final trajectories for all maps 
+	score_trajectories = False 
+	if score_trajectories:
+		f = open("traj_100_scores.txt","w")
+
+		scores 		= [0] * 100
+		num_counted = 0
+
+		sys.stdout.write("Calculating final trajectory scores... ")
+		sys.stdout.flush()
+		src = get_most_recent_data_dir()+"/"
+		map_dirs = os.listdir(src)
+
+		for m in map_dirs:
+			if os.path.isdir(src+m):
+				trav_dirs = os.listdir(src+m)
+				for t in trav_dirs:
+					if os.path.isdir(src+m+"/"+t):
+						data_files = os.listdir(src+m+"/"+t)
+
+						score = None 
+
+						# parse out the actual traversal sequence and the current condition matrix
+						for d in data_files:
+							if d.find("actual_traversal_sequence")!=-1:
+								actual_traversal_sequence = get_traversal_sequence(src+m+"/"+t+"/"+d)
+								break
+
+
+						for d in data_files:
+							if d.find("likely_trajectories-100.txt")!=-1:
+								predicted_traversal_sequence = get_traversal_sequence(src+m+"/"+t+"/"+d,first=True)
+								score = get_sequence_score(actual_traversal_sequence,predicted_traversal_sequence)
+								break 
+
+						if score is not None:
+							for i in range(100):
+								scores[i] += score[i]
+							num_counted+=1
+						else:
+							print("ERROR: here")
+
+		for i in range(100):
+			scores[i] = ( float(scores[i]) / float(num_counted))
+			f.write("%0.5f\n"%scores[i])
+
+		f.close()
+		print("Done")
+		print("Number counted: "+str(num_counted))
+
+	#dir_name = "exec_data-"+runtime_code
+	#os.rename(dir_name,dir_name+"-(complete)")
 
 if __name__ == '__main__':
 	main()
+
+
